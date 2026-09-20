@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mesero - LechonAlHornoRuve</title>
+<style>
+body{background:#000;color:#fff;font-family:Arial;padding:12px;margin:0}
+h1{color:#FF1493;margin:5px 0 10px 0;font-size:22px}
+a{color:#FF1493;text-decoration:none}
+.leyenda{font-size:11px;margin-bottom:12px;color:#aaa}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.mesa{padding:14px;border-radius:12px;text-align:center;font-weight:bold;min-height:60px;display:flex;flex-direction:column;justify-content:center}
+.LIBRE{background:#0a3a0a;border:2px solid #0f0;color:#0f0}
+.OCUPADA{background:#3a0a0a;border:2px solid #f00;color:#f88}
+.CUENTA{background:#3a3a0a;border:2px solid #ff0;color:#ff0}
+.SERVIDA{background:#0a2a3a;border:2px solid #0af;color:#0af}
+.prod{background:#111;border:1px solid #333;padding:10px;border-radius:10px;margin:6px 0;display:flex;justify-content:space-between;align-items:center}
+.prod button{background:#FF1493;color:#fff;border:none;padding:8px 12px;border-radius:8px;font-weight:bold}
+form button{background:#FF1493;color:#fff;border:none;padding:6px 12px;border-radius:6px;margin-top:5px;width:100%}
+</style>
+</head><body>
+<h1>Mesero - LechonAlHornoRuve</h1>
+<div class="leyenda">
+<span style="color:#0f0">● Verde Libre</span> | 
+<span style="color:#f00">● Rojo Ocupada</span> | 
+<span style="color:#ff0">● Amarillo Cuenta</span> | 
+<span style="color:#0af">● Azul Servida</span>
+</div>
+<a href="/">← Inicio</a>
+
+<div class="grid" style="margin-top:12px">
+{% for m in mesas %}
+<div class="mesa {{m.estado}}">
+M{{m.numero}}<br><small style="font-size:10px">{{m.zona}}</small><br>
+<small>{{m.estado}}</small>
+{% if m.estado=='LIBRE' %}
+<form method="POST" action="/api/mesa/{{m.id}}/abrir">
+<input type="hidden" name="pax" value="2">
+<button>Abrir</button>
+</form>
+{% endif %}
+</div>
+{% endfor %}
+</div>
+
+<h3 style="color:#FF1493;margin-top:20px">Menú Rápido</h3>
+{% for p in productos %}
+<div class="prod">
+<div>{{p.nombre}}<br><small style="color:#FF1493">${{p.precio}}</small></div>
+<button>+</button>
+</div>
+{% endfor %}
+
+</body></html>

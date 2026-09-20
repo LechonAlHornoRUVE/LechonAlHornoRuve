@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>POS - LechonAlHornoRuve</title>
+<style>
+body{background:#0a0a0a;color:#fff;font-family:Arial;padding:20px;margin:0}
+h1{color:#FF1493;margin:0} a{color:#FF1493;text-decoration:none}
+.pago{border:2px solid #FF1493;padding:20px;border-radius:16px;background:#111;margin-top:20px;max-width:400px}
+select,button{width:100%;padding:14px;border-radius:10px;border:none;margin:8px 0;box-sizing:border-box;font-size:16px}
+select{background:#222;color:#fff;border:1px solid #333}
+.btn-pagar{background:#FF1493;color:#fff;font-weight:bold;cursor:pointer;font-size:18px}
+.btn-pagar:hover{background:#ff2fa0}
+.tag{display:inline-block;background:#222;border:1px solid #FF1493;color:#FF1493;padding:4px 10px;border-radius:20px;margin:3px;font-size:12px}
+ul{padding-left:15px}
+</style>
+</head><body>
+<h1>CAJA - LechonAlHornoRuve</h1>
+<a href="/">← Inicio</a>
+
+<div class="pago">
+<h3 style="margin-top:0;color:#FF1493">Cobro - Métodos permitidos</h3>
+<select id="metodo">
+  <option value="EFECTIVO">EFECTIVO</option>
+  <option value="TRANSFERENCIA">TRANSFERENCIA</option>
+  <option value="TARJETA">TARJETA</option>
+</select>
+
+<div style="margin:10px 0;font-size:14px;color:#aaa">
+✔ Efectivo<br>
+✔ Transferencia<br>
+✔ Pago con Tarjeta
+</div>
+
+<button class="btn-pagar" onclick="alert('✅ Cobrado con: '+document.getElementById('metodo').value)">COBRAR $0.00</button>
+</div>
+
+<h3 style="margin-top:30px">Mesas con cuenta abierta</h3>
+<ul>
+{% for m in mesas %}
+<li>Mesa {{m.numero}} - {{m.estado}} - {{m.pax}} personas</li>
+{% else %}
+<li style="color:#666">No hay mesas ocupadas ahora</li>
+{% endfor %}
+</ul>
+
+</body></html>

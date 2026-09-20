@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - LechonAlHornoRuve</title>
+<style>
+body{background:#000;color:#fff;font-family:Arial;margin:0;padding:15px}
+h1{color:#FF1493;margin:0 0 10px 0} h2{color:#FF1493;font-size:18px;margin-top:25px;border-bottom:1px solid #222;padding-bottom:5px}
+a{color:#FF1493;text-decoration:none;margin-right:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px}
+.mesa{padding:15px;border-radius:12px;text-align:center;font-weight:bold;font-size:13px}
+.LIBRE{background:#0f0;color:#000} .OCUPADA{background:#f00;color:#fff} .CUENTA{background:#ff0;color:#000} .SERVIDA{background:#0af;color:#fff}
+.tag{background:#111;border:1px solid #FF1493;color:#FF1493;padding:5px 12px;border-radius:20px;display:inline-block;margin:3px;font-size:12px}
+ul{padding-left:18px} li{margin:5px 0;color:#ccc}
+.card{background:#111;border:1px solid #222;border-radius:12px;padding:15px;margin-top:15px}
+</style>
+</head><body>
+<h1>LechonAlHornoRuve - ADMIN</h1>
+<a href="/">Inicio</a> <a href="/pos">POS</a> <a href="/mesero">Mesero</a> <a href="/cocina">Cocina</a> <a href="/logout">Salir</a>
+
+<div class="card">
+<h2 style="margin-top:0">Métodos de Pago Activos</h2>
+{% for m in metodos %}<span class="tag">{{m}}</span>{% endfor %}
+<p style="font-size:12px;color:#888;margin-top:10px">Configurados según tu petición: Efectivo, Transferencia, Tarjeta</p>
+</div>
+
+<h2>Mapa del Restaurante ({{mesas|length}} mesas)</h2>
+<div class="grid">
+{% for mesa in mesas %}
+<div class="mesa {{mesa.estado}}">Mesa {{mesa.numero}}<br><small>{{mesa.zona}}</small><br>{{mesa.estado}}</div>
+{% endfor %}
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Productos</h2>
+<ul>
+{% for p in productos %}
+<li>{{p.nombre}} - ${{p.precio}} <small style="color:#FF1493">({{p.categoria}})</small></li>
+{% endfor %}
+</ul>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Próximos pasos Fase 2</h2>
+<p style="font-size:13px;color:#aaa">✔ Inventario con recetas<br>✔ Reportes por método de pago (efectivo/transferencia/tarjeta)<br>✔ Apertura/cierre ciego de caja<br>✔ PIN para autorizar borrados</p>
+</div>
+
+</body></html>
