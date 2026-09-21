@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-final-quitar-pedido-cocina'
+app.secret_key = 'ruve-cloudinary-definitivo'
 
-UPLOAD_FOLDER = 'static/uploads'
+UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXT = {'png','jpg','jpeg','webp'}
 
@@ -19,6 +19,23 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 db = SQLAlchemy(app)
+
+# --- CLOUDINARY CONFIG ---
+CLOUDINARY_ENABLED = False
+try:
+    import cloudinary
+    import cloudinary.uploader
+    cloudinary.config(
+        cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key = os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret = os.environ.get('CLOUDINARY_API_SECRET'),
+        secure = True
+    )
+    if os.environ.get('CLOUDINARY_CLOUD_NAME'):
+        CLOUDINARY_ENABLED = True
+        print("Cloudinary ACTIVADO - imagenes permanentes")
+except Exception as e:
+    print(f"Cloudinary no instalado o no configurado: {e}")
 
 class User(db.Model):
     __tablename__ = 'usuarios'
@@ -39,7 +56,7 @@ class Producto(db.Model):
     precio=db.Column(db.Float, default=0)
     stock=db.Column(db.Integer, default=0)
     costo=db.Column(db.Float, default=0)
-    imagen=db.Column(db.String(200), default="")
+    imagen=db.Column(db.String(500), default="") # Ahora guarda URL larga
     descripcion=db.Column(db.Text, default="")
     categoria=db.Column(db.String(50), default="Sin categoria")
     disponible=db.Column(db.Boolean, default=True)
@@ -66,7 +83,7 @@ class Gasto(db.Model):
 class Config(db.Model):
     __tablename__ = 'config'
     id=db.Column(db.Integer, primary_key=True)
-    logo_path=db.Column(db.String(200), default="logo.png")
+    logo_path=db.Column(db.String(500), default="logo.png")
     mod_pos_mesero=db.Column(db.Boolean, default=False)
 class Mesa(db.Model):
     __tablename__ = 'mesas'
@@ -91,18 +108,45 @@ def get_config():
     c=Config.query.first()
     if not c: c=Config(); db.session.add(c); db.session.commit()
     return c
+
 def save_upload(file):
-    if file and file.filename and '.' in file.filename and file.filename.rsplit('.',1)[1].lower() in ALLOWED_EXT:
-        filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(file.filename)}"
-        path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(path)
-        return f"uploads/{filename}"
+    if not file or not file.filename: return ""
+    if '.' not in file.filename: return ""
+    ext = file.filename.rsplit('.',1)[1].lower()
+    if ext not in ALLOWED_EXT: return ""
+    try:
+        if CLOUDINARY_ENABLED:
+            # Sube a Cloudinary permanente
+            result = cloudinary.uploader.upload(file, folder="ruve_productos", resource_type="image")
+            return result.get('secure_url', '')
+        else:
+            # Fallback local (si no configuraste cloudinary)
+            filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{secure_filename(file.filename)}"
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(path)
+            if os.path.exists(path):
+                return f"uploads/{filename}"
+    except Exception as e:
+        print(f"Error guardando imagen: {e}")
     return ""
+
 def get_producto_imagen(p):
     try:
-        if p and p.imagen: return f"/static/{p.imagen}"
+        if p and p.imagen:
+            # Si es URL de Cloudinary, devolver directa
+            if p.imagen.startswith('http'):
+                return p.imagen
+            # Si es local, verificar que exista
+            full_path = os.path.join(app.root_path, 'static', p.imagen)
+            if os.path.exists(full_path):
+                return f"/static/{p.imagen}"
     except: pass
-    cfg=get_config(); return f"/static/{cfg.logo_path}"
+    cfg=get_config()
+    # Logo tambien puede ser de cloudinary
+    if cfg.logo_path and cfg.logo_path.startswith('http'):
+        return cfg.logo_path
+    return f"/static/{cfg.logo_path}"
+
 def format_mxn(n):
     try: return f"${float(n):,.2f} MXN"
     except: return "$0.00 MXN"
@@ -120,13 +164,7 @@ with app.app_context():
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS disponible BOOLEAN DEFAULT TRUE"))
             conn.commit()
     except:
-        try:
-            with db.engine.connect() as conn:
-                for sql in ["ALTER TABLE productos ADD COLUMN costo FLOAT DEFAULT 0","ALTER TABLE productos ADD COLUMN ref VARCHAR(50) DEFAULT ''","ALTER TABLE productos ADD COLUMN codigo_barras VARCHAR(100) DEFAULT ''","ALTER TABLE productos ADD COLUMN vendido_por VARCHAR(20) DEFAULT 'Unidad'"]:
-                    try: conn.execute(text(sql))
-                    except: pass
-                conn.commit()
-        except: pass
+        pass
     if not User.query.filter_by(username='admin').first():
         db.session.add(User(username='admin',nombre_completo='Administrador General',password=generate_password_hash('admin123'),is_admin=True,rol='admin'))
     if Categoria.query.count()==0:
@@ -186,7 +224,28 @@ body{background:#000;color:white;font-family:Arial;margin:0}
 
 def nav():
     cfg=get_config(); rol=session.get('rol','cajero'); is_admin=session.get('is_admin', False); nombre=session.get('nombre_completo') or session.get('user','')
-    logo_url=f"/static/{cfg.logo_path}"
+    logo_url=get_producto_imagen(cfg) if hasattr(cfg, 'logo_path') else f"/static/{cfg.logo_path}"
+    # Para nav si logo es url cloudinary usar directo
+    if cfg.logo_path and cfg.logo_path.startswith('http'):
+        logo_url=cfg.logo_path
+    else:
+        logo_url=f"/static/{cfg.logo_path}" if not cfg.logo_path.startswith('http') else cfg.logo_path
+        try:
+            full = os.path.join(app.root_path, 'static', cfg.logo_path)
+            if not os.path.exists(full):
+                logo_url = f"/static/{cfg.logo_path}" # fallback
+        except: pass
+    # fix logo url final
+    logo_url = get_producto_imagen(cfg) if not cfg.logo_path.startswith('http') or True else cfg.logo_path
+    # simplificar
+    try:
+        if cfg.logo_path.startswith('http'):
+            logo_url = cfg.logo_path
+        else:
+            logo_url = get_producto_imagen(cfg)
+    except:
+        logo_url = f"/static/{cfg.logo_path}"
+
     if not is_admin and rol=='cocina':
         return f'<nav class="navbar"><div class="d-flex align-items-center"><img src="{logo_url}" style="width:40px;height:40px;border-radius:50%;background:white;padding:3px;object-fit:cover"><h6 class="m-0 ms-2" style="color:#ffcc00">Cocina {nombre}</h6></div><div><a href="/cocina" class="me-3">🔥 Cocina</a><a href="/logout">Salir</a></div></nav>'
     links=""
@@ -212,10 +271,11 @@ def login():
             return redirect('/dashboard')
         else:
             error="Usuario o contraseña incorrectos"
+    logo_url = get_producto_imagen(cfg)
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
     <div class="card" style="width:100%;max-width:380px;text-align:center;padding:30px 25px">
-        <div style="display:flex;justify-content:center;margin-bottom:15px"><img src="/static/{cfg.logo_path}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid var(--rosa);display:block;margin:0 auto"></div>
+        <div style="display:flex;justify-content:center;margin-bottom:15px"><img src="{logo_url}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid var(--rosa);display:block;margin:0 auto"></div>
         <h3 style="color:var(--rosa);font-weight:bold;margin:10px 0 20px 0">Ruve</h3>
         {"<div style='background:#2a1018;border:1px solid var(--rosa);color:var(--rosa);padding:8px;border-radius:8px;font-size:12px;margin-bottom:10px'>"+error+"</div>" if error else ""}
         <form method="POST" style="text-align:left"><input name="username" class="form-control mb-3" placeholder="Usuario" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><button class="btn-rosa w-100" style="padding:12px;font-size:15px;border-radius:10px">Entrar</button></form>
@@ -234,9 +294,10 @@ def restablecer():
         elif nueva!=confirmar: error="Las contraseñas no coinciden"
         elif len(nueva)<4: error="Mínimo 4 caracteres"
         else: u.password=generate_password_hash(nueva); db.session.commit(); msg=f"Contraseña de {u.nombre_completo} restablecida."
+    logo_url = get_producto_imagen(cfg)
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
-    <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px"><div style="display:flex;justify-content:center;margin-bottom:10px"><img src="/static/{cfg.logo_path}" style="width:90px;height:90px;border-radius:50%;background:white;padding:4px;border:2px solid var(--rosa)"></div><h5 style="color:var(--rosa);font-weight:bold">Restablecer Contraseña</h5>
+    <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px"><div style="display:flex;justify-content:center;margin-bottom:10px"><img src="{logo_url}" style="width:90px;height:90px;border-radius:50%;background:white;padding:4px;border:2px solid var(--rosa)"></div><h5 style="color:var(--rosa);font-weight:bold">Restablecer Contraseña</h5>
         {"<div style='background:#101a10;border:1px solid #25D366;color:#25D366;padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+msg+"</div>" if msg else ""}{"<div style='background:#2a1018;border:1px solid var(--rosa);color:var(--rosa);padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+error+"</div>" if error else ""}
         <form method="POST" class="text-start mt-3"><label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa w-100">Restablecer</button></form><div style="margin-top:12px"><a href="/" style="color:#888;font-size:12px">← Volver al login</a></div></div></div>
 """)
@@ -250,13 +311,7 @@ def dashboard():
     productos=Producto.query.filter_by(disponible=True).all()
     productos_list=[]
     for p in productos:
-        try:
-            img=get_producto_imagen(p)
-            precio=p.precio or 0
-        except:
-            img=f"/static/{cfg.logo_path}"
-            precio=0
-        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria','Sin categoria'),'stock':getattr(p,'stock',0),'img_url':img,'precio_mxn':format_mxn(precio)})
+        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria','Sin categoria'),'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(p.precio or 0)})
     carrito=session.get('carrito',[]); total=sum([x['precio']*x['cant'] for x in carrito])
     mesas_ocupadas=Mesa.query.filter_by(estado='ocupada').all()
     cats=Categoria.query.all()
@@ -438,8 +493,7 @@ def mesa_detalle(id):
     mesa=Mesa.query.get(id); productos=Producto.query.filter_by(disponible=True).all()
     productos_list=[]
     for p in productos:
-        try: productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
-        except: continue
+        productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
     carrito=session.get(f'mesa_carrito_{id}',[]); total_nuevo=sum([x['precio']*x['cant'] for x in carrito]); comandas=[c for c in mesa.comandas if c.estado!='entregado']
     return render_template_string(STYLE_BASE+nav()+"""
 <div style="display:flex;height:calc(100vh - 60px);gap:10px;padding:10px">
@@ -449,11 +503,11 @@ def mesa_detalle(id):
 {% for c in comandas %}
 <div style="background:white;color:black;padding:8px;border-radius:8px;margin-bottom:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
 <div><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}<br><small style="color:#888">{{c.estado}} - {{c.fecha.strftime('%H:%M')}} - {{c.mesero_nombre}}</small></div>
-<a href="/mesa/{{mesa.id}}/comanda/eliminar/{{c.id}}" onclick="return confirm('¿Quitar {{c.producto_nombre}} del pedido? Si ya se mandó a cocina se eliminará igual.')" style="background:var(--rosa);color:white;padding:6px 10px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:12px">✕ Quitar</a>
+<a href="/mesa/{{mesa.id}}/comanda/eliminar/{{c.id}}" onclick="return confirm('¿Quitar {{c.producto_nombre}} del pedido?')" style="background:var(--rosa);color:white;padding:6px 10px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:12px">✕ Quitar</a>
 </div>
 {% endfor %}
 {% if not comandas %}<p style="color:#888;font-size:12px;text-align:center;margin-top:10px">Sin productos en cocina</p>{% endif %}
-<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES de mandar</b>
+<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES</b>
 {% for it in carrito %}<div style="background:#fffde7;color:black;padding:5px;border-radius:4px;margin-top:5px;font-size:12px;display:flex;justify-content:space-between"><span>{{it.nombre}} x{{it.cant}} - {{it.total_mxn}}</span><a href="/mesa/{{mesa.id}}/carrito/eliminar/{{loop.index0}}" style="color:var(--rosa);font-weight:bold">✕</a></div><form action="/mesa/{{mesa.id}}/carrito/coment/{{loop.index0}}" method="POST" style="display:flex;gap:3px;margin-top:3px"><input name="comentario" value="{{it.comentario}}" class="form-control" style="font-size:11px" placeholder="💬 Comentario"><button style="background:var(--rosa);color:white;border:none;border-radius:4px;padding:4px 8px">💾</button></form>{% endfor %}
 </div>
 <div style="border-top:2px solid var(--rosa);padding-top:10px"><b>Total Final {{total_final_mxn}}</b><br><a href="/mesa/{{mesa.id}}/enviar" style="background:#00e5ff;color:black;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">MANDAR A COCINA</a><a href="/mesa/{{mesa.id}}/cobrar" style="background:#25D366;color:white;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">💰 COBRAR MESA</a></div>
@@ -466,51 +520,41 @@ def mesa_detalle(id):
 def mesa_add(mesa_id, prod_id):
     prod=Producto.query.get(prod_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[])
     carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'cant':1,'comentario':''}); session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True; return redirect(f'/mesa/{mesa_id}')
-
 @app.route('/mesa/<int:mesa_id>/carrito/coment/<int:index>', methods=['POST'])
 def mesa_carrito_coment(mesa_id,index):
     carrito=session.get(f'mesa_carrito_{mesa_id}',[]);
     if 0 <= index < len(carrito): carrito[index]['comentario']=request.form.get('comentario','')[:200]; session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True
     return redirect(f'/mesa/{mesa_id}')
-
 @app.route('/mesa/<int:mesa_id>/carrito/eliminar/<int:index>')
 def mesa_carrito_eliminar(mesa_id,index):
     carrito=session.get(f'mesa_carrito_{mesa_id}',[]);
-    if 0 <= index < len(carrito):
-        carrito.pop(index); session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True
+    if 0 <= index < len(carrito): carrito.pop(index); session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True
     return redirect(f'/mesa/{mesa_id}')
-
 @app.route('/mesa/<int:mesa_id>/comanda/eliminar/<int:comanda_id>')
 def mesa_comanda_eliminar(mesa_id, comanda_id):
-    mesa=Mesa.query.get(mesa_id)
-    com=Comanda.query.get(comanda_id)
+    mesa=Mesa.query.get(mesa_id); com=Comanda.query.get(comanda_id)
     if not mesa or not com: return redirect(f'/mesa/{mesa_id}')
     try:
         prod=Producto.query.filter_by(nombre=com.producto_nombre).first()
         precio=prod.precio if prod else 0
         mesa.total = max(0, (mesa.total or 0) - (precio * (com.cantidad or 1)))
     except: pass
-    db.session.delete(com)
-    db.session.commit()
-    # Si no quedan comandas y total 0, liberar mesa
+    db.session.delete(com); db.session.commit()
     restantes = [c for c in mesa.comandas if c.estado!='entregado']
     if len(restantes)==0 and (mesa.total or 0)<=0:
         mesa.estado='libre'; mesa.total=0; db.session.commit()
         return redirect('/mesas')
     return redirect(f'/mesa/{mesa_id}')
-
 @app.route('/mesa/<int:mesa_id>/enviar')
 def mesa_enviar(mesa_id):
     mesa=Mesa.query.get(mesa_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[]); mesero=session.get('user'); mesero_nombre=session.get('nombre_completo','')
     for it in carrito:
         com=Comanda(mesa_id=mesa.id,producto_nombre=it['nombre'],cantidad=it['cant'],mesero=mesero,mesero_nombre=mesero_nombre,estado='cocina',comentario=it.get('comentario','')); mesa.total=(mesa.total or 0)+it['precio']*it['cant']; mesa.estado='ocupada'; db.session.add(com)
     db.session.commit(); session[f'mesa_carrito_{mesa_id}']=[]; session.modified=True; return redirect(f'/mesa/{mesa_id}')
-
 @app.route('/mesa/<int:id>/cobrar')
 def mesa_cobrar_view(id):
     mesa=Mesa.query.get(id); total=mesa.total or 0
     return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:500px"><div class="card" style="border-color:#25D366"><h4>💰 Cobrar {{mesa.nombre}} - {{total_mxn}}</h4><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:15px"><a href="/mesa/{{mesa.id}}/cobrar_final/efectivo" style="background:#25D366;color:white;padding:20px;text-align:center;border-radius:8px">💵<br>Efectivo</a><a href="/mesa/{{mesa.id}}/cobrar_final/tarjeta" style="background:#3f51b5;color:white;padding:20px;text-align:center;border-radius:8px">💳<br>Tarjeta</a><a href="/mesa/{{mesa.id}}/cobrar_final/transferencia" style="background:#0097a7;color:white;padding:20px;text-align:center;border-radius:8px">🏦<br>Transfer</a></div></div></div>""", mesa=mesa, total_mxn=format_mxn(total))
-
 @app.route('/mesa/<int:id>/cobrar_final/<metodo>')
 def mesa_cobrar_final(id,metodo):
     mesa=Mesa.query.get(id); vendedor=session.get('user'); vendedor_nombre=session.get('nombre_completo','')
@@ -548,10 +592,8 @@ def productos_list():
     productos=Producto.query.all()
     productos_list=[]
     for p in productos:
-        try:
-            productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))})
-        except: continue
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th>Acciones</th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/editar/{{p.id}}" style="color:#00e5ff;margin-right:10px;font-weight:bold">Editar</a><a href="/productos/eliminar/{{p.id}}" onclick="return confirm('¿Borrar {{p.nombre}}?')" style="color:var(--rosa);font-weight:bold">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list)
+        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))})
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}}) {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Cloudinary Activo</small>{% endif %}</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th>Acciones</th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/editar/{{p.id}}" style="color:#00e5ff;margin-right:10px;font-weight:bold">Editar</a><a href="/productos/eliminar/{{p.id}}" onclick="return confirm('¿Borrar {{p.nombre}}?')" style="color:var(--rosa);font-weight:bold">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/productos/nuevo', methods=['GET','POST'])
 def productos_nuevo():
@@ -570,10 +612,10 @@ def productos_nuevo():
             <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" checked style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
             <div class="row" style="margin-top:20px"><div class="col-md-6"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" placeholder="10,00" required></div><div class="col-md-6"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" placeholder="5,00"></div></div>
             <div class="row" style="margin-top:15px"><div class="col-md-4"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-4"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="0"></div></div>
-            <div style="margin-top:20px"><label class="crear-label">Foto (visible para TODOS)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto {% if cloudinary_enabled %}<span style="color:#25D366">(Se guardará permanente en la nube ☁️)</span>{% else %}(visible para TODOS){% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR ARTÍCULO</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
 <script>function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}</script>
-""", categorias=categorias)
+""", categorias=categorias, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/productos/editar/<int:id>', methods=['GET','POST'])
 def productos_editar(id):
@@ -608,9 +650,9 @@ def productos_editar(id):
             <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" {{'checked' if p.vendido_por=='Unidad' else ''}} style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" {{'checked' if p.vendido_por!='Unidad' else ''}} style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
             <div class="row" style="margin-top:20px"><div class="col-md-4"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" value="{{p.precio}}"></div><div class="col-md-4"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" value="{{p.costo}}"></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="{{p.stock}}"></div></div>
             <div class="row" style="margin-top:15px"><div class="col-md-6"><label class="crear-label">REF</label><input name="ref" class="crear-input" value="{{p.ref}}"></div><div class="col-md-6"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" value="{{p.codigo_barras}}"></div></div>
-            <div style="margin-top:20px"><label class="crear-label">Foto actual: <img src="{{p.img_url}}" style="width:50px;height:50px;object-fit:cover;border-radius:6px;background:white;padding:2px"></label><br><label class="crear-label">Cambiar foto (opcional - deja vacío para conservar)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto actual: <img src="{{p.img_url}}" style="width:50px;height:50px;object-fit:cover;border-radius:6px;background:white;padding:2px"></label><br><label class="crear-label">Cambiar foto (opcional - deja vacío para conservar) {% if cloudinary_enabled %}<span style="color:#25D366">☁️ Se guardará permanente</span>{% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR CAMBIOS</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
-""", p={'id':p.id,'nombre':p.nombre,'descripcion':p.descripcion or '', 'categoria':p.categoria, 'disponible':p.disponible, 'vendido_por':p.vendido_por or 'Unidad', 'precio':p.precio or 0, 'costo':p.costo or 0, 'stock':p.stock or 0, 'ref':p.ref or '', 'codigo_barras':p.codigo_barras or '', 'img_url':get_producto_imagen(p)}, categorias=categorias)
+""", p={'id':p.id,'nombre':p.nombre,'descripcion':p.descripcion or '', 'categoria':p.categoria, 'disponible':p.disponible, 'vendido_por':p.vendido_por or 'Unidad', 'precio':p.precio or 0, 'costo':p.costo or 0, 'stock':p.stock or 0, 'ref':p.ref or '', 'codigo_barras':p.codigo_barras or '', 'img_url':get_producto_imagen(p)}, categorias=categorias, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/api/categorias/crear', methods=['POST'])
 def api_categorias_crear():
@@ -646,7 +688,7 @@ function cargarGrafica(){
     document.getElementById('totalGanancia').innerText='$'+(data.total_ventas-data.total_gastos).toFixed(2)+' MXN';
     let ctx=document.getElementById('graficaVentasGastos').getContext('2d');
     if(chart) chart.destroy();
-    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.2)',fill:true,tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.2)',fill:true,tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
+    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,[STRIPPED] MXN',data:data.ventas,[STRIPPED] MXN',data:data.gastos,[STRIPPED]
   });
 }
 document.getElementById('formGasto').addEventListener('submit',function(e){e.preventDefault();fetch('/api/gasto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({concepto:document.getElementById('concepto').value,monto:document.getElementById('monto').value})}).then(()=>{document.getElementById('concepto').value='';document.getElementById('monto').value='';cargarGrafica();});});
@@ -690,12 +732,13 @@ def admin_config():
     if not session.get('is_admin'): return redirect('/dashboard')
     cfg=get_config()
     if request.method=='POST':
-        if 'logo' in request.files:
+        if 'logo' in request.files and request.files['logo'].filename:
             nl=save_upload(request.files['logo'])
             if nl: cfg.logo_path=nl
         cfg.mod_pos_mesero='mod_pos_mesero' in request.form
         db.session.commit(); return redirect('/admin/config')
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo</h4><div class="text-center" style="display:flex;justify-content:center"><img src="/static/{{cfg.logo_path}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid var(--rosa);display:block;margin:0 auto"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg)
+    logo_url = get_producto_imagen(cfg)
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Permanente</small>{% endif %}</h4><div class="text-center" style="display:flex;justify-content:center"><img src="{{logo_url}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid var(--rosa);display:block;margin:0 auto"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg, logo_url=logo_url, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/ticket/<int:id>')
 def ticket(id):
