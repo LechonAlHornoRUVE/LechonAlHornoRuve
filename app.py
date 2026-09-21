@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-final-total-real-eliminar-ticket'
+app.secret_key = 'ruve-loyverse-cambio-efectivo'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -38,10 +38,14 @@ class Producto(db.Model):
     nombre=db.Column(db.String(100))
     precio=db.Column(db.Float, default=0)
     stock=db.Column(db.Integer, default=0)
+    costo=db.Column(db.Float, default=0)
     imagen=db.Column(db.String(200), default="")
     descripcion=db.Column(db.Text, default="")
     categoria=db.Column(db.String(50), default="Sin categoria")
     disponible=db.Column(db.Boolean, default=True)
+    vendido_por=db.Column(db.String(20), default="Unidad")
+    ref=db.Column(db.String(50), default="")
+    codigo_barras=db.Column(db.String(100), default="")
 class Venta(db.Model):
     __tablename__ = 'ventas'
     id=db.Column(db.Integer, primary_key=True)
@@ -117,39 +121,46 @@ STYLE_BASE = """
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
+:root{--rosa:#ff4d8a}
 body{background:#000;color:white;font-family:Arial;margin:0}
-.card{background:#111;border:2px solid #ff4d8a;border-radius:15px;padding:20px}
-.btn-rosa{background:#ff4d8a;color:white;border:none;padding:10px 18px;border-radius:10px;font-weight:bold}
-.navbar{background:#000!important;border-bottom:2px solid #ff4d8a;display:flex;justify-content:space-between;align-items:center;padding:10px 15px;flex-wrap:wrap}
+.card{background:#111;border:2px solid var(--rosa);border-radius:15px;padding:20px}
+.btn-rosa{background:var(--rosa);color:white;border:none;padding:10px 18px;border-radius:10px;font-weight:bold}
+.navbar{background:#000!important;border-bottom:2px solid var(--rosa);display:flex;justify-content:space-between;align-items:center;padding:10px 15px;flex-wrap:wrap}
 .pos-container{display:flex;height:calc(100vh - 60px);gap:10px;padding:10px}
-.pos-left{width:38%;background:#0f0f0f;border:2px solid #ff4d8a;border-radius:15px;display:flex;flex-direction:column}
+.pos-left{width:38%;background:#0f0f0f;border:2px solid var(--rosa);border-radius:15px;display:flex;flex-direction:column}
 .pos-center{width:12%;display:flex;flex-direction:column;gap:8px;overflow-y:auto}
 .pos-right{width:50%;background:#0f0f0f;border:2px solid #333;border-radius:15px;padding:10px;overflow-y:auto}
 .cat-btn{background:#222;color:white;font-weight:bold;padding:14px;border:2px solid #333;border-radius:8px;cursor:pointer;text-align:center;font-size:12px}
-.cat-btn.active{background:#ff4d8a;border-color:#ff4d8a}
+.cat-btn.active{background:var(--rosa);border-color:var(--rosa)}
 .prod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .prod-card{background:#1a1a1a;border:2px solid #333;border-radius:12px;padding:10px;text-align:center;cursor:pointer}
-.prod-card:hover{border-color:#ff4d8a}
+.prod-card:hover{border-color:var(--rosa)}
 .prod-card img{width:70px;height:70px;object-fit:cover;border-radius:10px;background:white;padding:5px}
-.prod-card h6{color:#ff4d8a;margin:8px 0 2px 0;font-size:12px}
-.ticket-header{background:#111;padding:12px;border-bottom:2px solid #ff4d8a;border-radius:15px 15px 0 0}
+.prod-card h6{color:var(--rosa);margin:8px 0 2px 0;font-size:12px}
+.ticket-header{background:#111;padding:12px;border-bottom:2px solid var(--rosa);border-radius:15px 15px 0 0}
 .ticket-body{flex:1;overflow-y:auto;padding:10px;background:white;color:black}
-.ticket-footer{background:#111;padding:12px;border-top:2px solid #ff4d8a;border-radius:0 0 15px 15px}
+.ticket-footer{background:#111;padding:12px;border-top:2px solid var(--rosa);border-radius:0 0 15px 15px}
 .btn-cash{background:#25D366;color:white;font-weight:bold;padding:12px;border:none;border-radius:8px;width:100%}
 .btn-pay{background:#3f51b5;color:white;font-weight:bold;padding:12px;border:none;border-radius:8px;width:100%}
 .btn-trans{background:#0097a7;color:white;font-weight:bold;padding:12px;border:none;border-radius:8px;width:100%}
 .btn-clear{background:#333;color:white;border:1px solid #555;width:100%;padding:10px;border-radius:8px;margin-top:8px;font-weight:bold}
 .dropdown{position:relative;display:inline-block}
-.dropbtn{background:#111;color:#ff4d8a;border:2px solid #ff4d8a;padding:6px 14px;border-radius:8px;font-weight:bold;cursor:pointer}
-.dropdown-content{display:none;position:absolute;right:0;background:#111;border:2px solid #ff4d8a;border-radius:10px;min-width:230px;z-index:9999}
+.dropbtn{background:#111;color:var(--rosa);border:2px solid var(--rosa);padding:6px 14px;border-radius:8px;font-weight:bold;cursor:pointer}
+.dropdown-content{display:none;position:absolute;right:0;background:#111;border:2px solid var(--rosa);border-radius:10px;min-width:230px;z-index:9999}
 .dropdown-content a{display:block;padding:12px 16px;color:white;text-decoration:none;font-size:13px;border-bottom:1px solid #222}
-.dropdown-content a:hover{background:#222;color:#ff4d8a}
+.dropdown-content a:hover{background:#222;color:var(--rosa)}
 .dropdown-content.show{display:block}
-.input-rosa{border:none!important;border-bottom:2px solid #ff4d8a!important;background:#111!important;color:white!important;border-radius:0!important;padding:10px 0!important;width:100%}
-.label-rosa{font-size:11px;color:#ff4d8a;margin-top:18px;display:block;font-weight:bold;letter-spacing:0.5px}
-.select-rosa{background:#111!important;color:white!important;border:2px solid #ff4d8a!important;border-radius:8px!important;padding:8px!important}
-.card-negra{background:#111;border:2px solid #ff4d8a;border-radius:12px;padding:20px;margin:15px;box-shadow:0 0 15px rgba(255,77,138,0.25)}
-.header-rosa-negro{background:#000;border-bottom:3px solid #ff4d8a;color:#ff4d8a;padding:14px 20px;display:flex;align-items:center;font-weight:bold;font-size:18px;letter-spacing:1px}
+.crear-wrapper{background:#000;min-height:100vh}
+.crear-header{background:var(--rosa);color:white;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;font-weight:bold}
+.crear-card{background:#0e0e0e;border:1px solid #222;border-radius:8px;padding:20px;margin:15px}
+.crear-input{border:none!important;border-bottom:1px solid #444!important;background:transparent!important;color:white!important;border-radius:0!important;padding:12px 0!important;width:100%;font-size:15px}
+.crear-input:focus{border-bottom-color:var(--rosa)!important;box-shadow:none!important}
+.crear-label{font-size:11px;color:#888;display:block;margin-top:5px}
+.crear-label-rosa{font-size:11px;color:var(--rosa);display:block;margin-top:15px;font-weight:bold}
+.label-rosa{font-size:11px;color:var(--rosa);margin-top:18px;display:block;font-weight:bold}
+.modal-efectivo{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:none;justify-content:center;align-items:center;z-index:99999}
+.modal-efectivo.show{display:flex}
+.modal-caja{background:#111;border:2px solid var(--rosa);border-radius:15px;padding:25px;width:90%;max-width:380px;text-align:center}
 </style>
 """
 
@@ -165,8 +176,8 @@ def nav():
     if is_admin or rol=='cajero': links+='<a href="/cocina" class="me-3" style="color:#ffcc00">🔥 Cocina</a>'
     admin_drop=""
     if is_admin:
-        admin_drop=f'<div class="dropdown"><button onclick="toggleDropdown()" class="dropbtn">⚙️ Herramientas admin ▾</button><div id="adminDropdown" class="dropdown-content"><a href="/productos">📦 Productos</a><a href="/productos/nuevo">➕ Crear artículo</a><a href="/admin/mesas">🪑 Mesas</a><a href="/ventas">🧾 Ventas</a><a href="/dueno">💰 Dueño + Gráfica</a><a href="/admin/config">⚙️ Config + Logo</a><a href="/admin/usuarios">👥 Usuarios</a></div></div><script>function toggleDropdown(){{document.getElementById("adminDropdown").classList.toggle("show");}} window.onclick=function(e){{if(!e.target.matches(".dropbtn")){{var d=document.getElementById("adminDropdown"); if(d && d.classList.contains("show")) d.classList.remove("show");}}}}</script>'
-    return f'<nav class="navbar"><div class="d-flex align-items-center"><img src="{logo_url}" style="width:40px;height:40px;border-radius:50%;background:white;padding:3px;object-fit:cover"><h6 class="m-0 ms-2" style="color:#ff4d8a">Ruve {nombre}</h6><span id="relojPC" style="margin-left:12px;color:#ff4d8a;font-size:10px;font-weight:700"></span></div><div>{links}{admin_drop}<a href="/logout" class="ms-3">Salir</a></div></nav><script>function actualizarReloj(){{let a=new Date(); let el=document.getElementById("relojPC"); if(el) el.textContent=a.toLocaleString("es-MX",{{hour12:false,timeZone:"America/Cancun"}})}};setInterval(actualizarReloj,1000);actualizarReloj();</script>'
+        admin_drop=f'<div class="dropdown"><button onclick="toggleDropdown()" class="dropbtn">⚙️ Herramientas admin ▾</button><div id="adminDropdown" class="dropdown-content"><a href="/productos">📦 Productos</a><a href="/productos/nuevo">➕ Crear artículo</a><a href="/admin/categorias">🏷️ Categorías</a><a href="/admin/mesas">🪑 Mesas</a><a href="/ventas">🧾 Ventas</a><a href="/dueno">💰 Dueño + Gráfica</a><a href="/admin/config">⚙️ Config + Logo</a><a href="/admin/usuarios">👥 Usuarios</a></div></div><script>function toggleDropdown(){{document.getElementById("adminDropdown").classList.toggle("show");}} window.onclick=function(e){{if(!e.target.matches(".dropbtn")){{var d=document.getElementById("adminDropdown"); if(d && d.classList.contains("show")) d.classList.remove("show");}}}}</script>'
+    return f'<nav class="navbar"><div class="d-flex align-items-center"><img src="{logo_url}" style="width:40px;height:40px;border-radius:50%;background:white;padding:3px;object-fit:cover"><h6 class="m-0 ms-2" style="color:var(--rosa)">Ruve {nombre}</h6><span id="relojPC" style="margin-left:12px;color:var(--rosa);font-size:10px;font-weight:700"></span></div><div>{links}{admin_drop}<a href="/logout" class="ms-3">Salir</a></div></nav><script>function actualizarReloj(){{let a=new Date(); let el=document.getElementById("relojPC"); if(el) el.textContent=a.toLocaleString("es-MX",{{hour12:false,timeZone:"America/Cancun"}})}};setInterval(actualizarReloj,1000);actualizarReloj();</script>'
 
 @app.route('/', methods=['GET','POST'])
 def login():
@@ -184,55 +195,30 @@ def login():
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
     <div class="card" style="width:100%;max-width:380px;text-align:center;padding:30px 25px">
-        <div style="display:flex;justify-content:center;align-items:center;margin-bottom:15px">
-            <img src="/static/{cfg.logo_path}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid #ff4d8a;display:block;margin:0 auto">
-        </div>
-        <h3 style="color:#ff4d8a;font-weight:bold;margin:10px 0 20px 0;text-align:center">Ruve</h3>
-        {"<div style='background:#2a1018;border:1px solid #ff4d8a;color:#ff4d8a;padding:8px;border-radius:8px;font-size:12px;margin-bottom:10px'>"+error+"</div>" if error else ""}
-        <form method="POST" style="text-align:left">
-            <input name="username" class="form-control mb-3" placeholder="Usuario" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px">
-            <input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px">
-            <button class="btn-rosa w-100" style="padding:12px;font-size:15px;border-radius:10px">Entrar</button>
-        </form>
-        <div style="margin-top:15px;text-align:center">
-            <a href="/restablecer" style="color:#ff4d8a;font-size:12px;text-decoration:none">¿Olvidaste tu contraseña? Restablecer</a>
-        </div>
+        <div style="display:flex;justify-content:center;margin-bottom:15px"><img src="/static/{cfg.logo_path}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid var(--rosa);display:block;margin:0 auto"></div>
+        <h3 style="color:var(--rosa);font-weight:bold;margin:10px 0 20px 0">Ruve</h3>
+        {"<div style='background:#2a1018;border:1px solid var(--rosa);color:var(--rosa);padding:8px;border-radius:8px;font-size:12px;margin-bottom:10px'>"+error+"</div>" if error else ""}
+        <form method="POST" style="text-align:left"><input name="username" class="form-control mb-3" placeholder="Usuario" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><button class="btn-rosa w-100" style="padding:12px;font-size:15px;border-radius:10px">Entrar</button></form>
+        <div style="margin-top:15px;text-align:center"><a href="/restablecer" style="color:var(--rosa);font-size:12px;text-decoration:none">¿Olvidaste tu contraseña? Restablecer</a></div>
     </div>
 </div>
 """)
 
 @app.route('/restablecer', methods=['GET','POST'])
 def restablecer():
-    cfg=get_config()
-    msg=None; error=None
+    cfg=get_config(); msg=None; error=None
     if request.method=='POST':
-        username=request.form.get('username','').strip()
-        nueva=request.form.get('nueva','').strip()
-        confirmar=request.form.get('confirmar','').strip()
+        username=request.form.get('username','').strip(); nueva=request.form.get('nueva','').strip(); confirmar=request.form.get('confirmar','').strip()
         u=User.query.filter_by(username=username).first()
         if not u: error="Usuario no encontrado"
         elif nueva!=confirmar: error="Las contraseñas no coinciden"
         elif len(nueva)<4: error="Mínimo 4 caracteres"
-        else:
-            u.password=generate_password_hash(nueva)
-            db.session.commit()
-            msg=f"Contraseña de {u.nombre_completo} ({u.username}) restablecida."
+        else: u.password=generate_password_hash(nueva); db.session.commit(); msg=f"Contraseña de {u.nombre_completo} restablecida."
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
-    <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px">
-        <div style="display:flex;justify-content:center;margin-bottom:10px"><img src="/static/{cfg.logo_path}" style="width:90px;height:90px;border-radius:50%;background:white;padding:4px;border:2px solid #ff4d8a"></div>
-        <h5 style="color:#ff4d8a;font-weight:bold">Restablecer Contraseña</h5>
-        {"<div style='background:#101a14;border:1px solid #25D366;color:#25D366;padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+msg+"</div>" if msg else ""}
-        {"<div style='background:#2a1018;border:1px solid #ff4d8a;color:#ff4d8a;padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+error+"</div>" if error else ""}
-        <form method="POST" class="text-start mt-3">
-            <label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" required style="background:#000!important;border:1.5px solid #ff4d8a!important">
-            <label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required style="background:#000!important;border:1.5px solid #ff4d8a!important">
-            <label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required style="background:#000!important;border:1.5px solid #ff4d8a!important">
-            <button class="btn-rosa w-100">Restablecer</button>
-        </form>
-        <div style="margin-top:12px"><a href="/" style="color:#888;font-size:12px">← Volver al login</a></div>
-    </div>
-</div>
+    <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px"><div style="display:flex;justify-content:center;margin-bottom:10px"><img src="/static/{cfg.logo_path}" style="width:90px;height:90px;border-radius:50%;background:white;padding:4px;border:2px solid var(--rosa)"></div><h5 style="color:var(--rosa);font-weight:bold">Restablecer Contraseña</h5>
+        {"<div style='background:#101a10;border:1px solid #25D366;color:#25D366;padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+msg+"</div>" if msg else ""}{"<div style='background:#2a1018;border:1px solid var(--rosa);color:var(--rosa);padding:8px;border-radius:8px;font-size:12px;margin:10px 0'>"+error+"</div>" if error else ""}
+        <form method="POST" class="text-start mt-3"><label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa w-100">Restablecer</button></form><div style="margin-top:12px"><a href="/" style="color:#888;font-size:12px">← Volver al login</a></div></div></div>
 """)
 
 @app.route('/dashboard')
@@ -246,7 +232,6 @@ def dashboard():
     carrito=session.get('carrito',[]); total=sum([x['precio']*x['cant'] for x in carrito])
     mesas_ocupadas=Mesa.query.filter_by(estado='ocupada').all()
     cats=Categoria.query.all()
-    # total hoy
     today = datetime.now().date()
     start = datetime(today.year, today.month, today.day)
     total_hoy_val = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
@@ -254,14 +239,8 @@ def dashboard():
 <div class="pos-container">
     <div class="pos-left">
         <div class="ticket-header">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-                <small style="color:#ff4d8a;font-weight:bold">TICKET - MOSTRADOR</small>
-                <small id="fechaPOS" style="color:#888;font-size:9px"></small>
-            </div>
-            <div style="background:#0a1a0f;border:1px solid #25D366;border-radius:8px;padding:6px 8px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
-                <small style="color:#25D366;font-weight:bold;font-size:10px">VENTA HOY</small>
-                <b id="totalHoy" style="color:#25D366;font-size:13px">{{total_hoy_mxn}}</b>
-            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center"><small style="color:var(--rosa);font-weight:bold">TICKET - MOSTRADOR</small><small id="fechaPOS" style="color:#888;font-size:9px"></small></div>
+            <div style="background:#0a1a0f;border:1px solid #25D366;border-radius:8px;padding:6px 8px;margin-top:8px;display:flex;justify-content:space-between;align-items:center"><small style="color:#25D366;font-weight:bold;font-size:10px">VENTA HOY</small><b id="totalHoy" style="color:#25D366;font-size:13px">{{total_hoy_mxn}}</b></div>
         </div>
         <div class="ticket-body">
             {% for item in carrito %}<div style="display:flex;justify-content:space-between;border-bottom:1px dashed #ccc;padding:6px 0;font-size:12px"><span>{{item.nombre}} x{{item.cant}}</span><span>{{item.total_mxn}}</span></div>{% endfor %}
@@ -269,40 +248,73 @@ def dashboard():
             {% if mesas_ocupadas %}<hr><div style="background:#fff3cd;color:black;padding:6px;border-radius:6px;font-size:10px"><b>MESAS POR COBRAR:</b>{% for m in mesas_ocupadas %}<div style="display:flex;justify-content:space-between"><span>{{m.nombre}} {{m.total_mxn}}</span><a href="/mesa/{{m.id}}/cobrar" style="background:#25D366;color:white;padding:2px 6px;border-radius:4px">Cobrar</a></div>{% endfor %}</div>{% endif %}
         </div>
         <div class="ticket-footer">
-            <div style="display:flex;justify-content:space-between;color:white;font-weight:bold;font-size:18px"><span>TOTAL</span><span>${{total}} MXN</span></div>
+            <div style="display:flex;justify-content:space-between;color:white;font-weight:bold;font-size:18px"><span>TOTAL</span><span id="totalTicket" data-total="{{total_num}}">${{total}} MXN</span></div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px">
-                <a href="/pos/pagar/efectivo" style="text-decoration:none"><button class="btn-cash">💵 Efectivo</button></a>
+                <button onclick="abrirEfectivo()" class="btn-cash">💵 Efectivo</button>
                 <a href="/pos/pagar/tarjeta" style="text-decoration:none"><button class="btn-pay">💳 Tarjeta</button></a>
                 <a href="/pos/pagar/transferencia" style="text-decoration:none"><button class="btn-trans">🏦 Transfer</button></a>
             </div>
             <form method="POST" action="/pos/clear"><button type="submit" class="btn-clear">🗑️ LIMPIAR TICKET</button></form>
         </div>
     </div>
-    <div class="pos-center">
-        <button class="cat-btn active" onclick="filtrar('todos')" id="btn-todos">Todos</button>
-        {% for cat in cats %}<button class="cat-btn" onclick="filtrar('{{cat.nombre}}')" id="btn-{{cat.nombre}}">{{cat.nombre}}</button>{% endfor %}
-    </div>
-    <div class="pos-right">
-        <div class="prod-grid">
-            {% for p in productos %}
-            <div class="prod-card" data-cat="{{p.categoria}}" onclick="location='/pos/add/{{p.id}}'">
-                <img src="{{p.img_url}}"><h6>{{p.nombre}}</h6><small style="color:#ff4d8a;font-weight:bold">{{p.precio_mxn}}</small><br><small style="color:#888;font-size:10px">{{p.categoria}} | {{p.stock}}</small>
-            </div>
-            {% endfor %}
+    <div class="pos-center"><button class="cat-btn active" onclick="filtrar('todos')" id="btn-todos">Todos</button>{% for cat in cats %}<button class="cat-btn" onclick="filtrar('{{cat.nombre}}')" id="btn-{{cat.nombre}}">{{cat.nombre}}</button>{% endfor %}</div>
+    <div class="pos-right"><div class="prod-grid">{% for p in productos %}<div class="prod-card" data-cat="{{p.categoria}}" onclick="location='/pos/add/{{p.id}}'"><img src="{{p.img_url}}"><h6>{{p.nombre}}</h6><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small><br><small style="color:#888;font-size:10px">{{p.categoria}} | {{p.stock}}</small></div>{% endfor %}</div></div>
+</div>
+
+<!-- MODAL EFECTIVO ESTILO LOYVERSE -->
+<div id="modalEfectivo" class="modal-efectivo">
+    <div class="modal-caja">
+        <h5 style="color:var(--rosa);font-weight:bold">💵 Cobrar en Efectivo</h5>
+        <div style="background:#0a0a0a;border:1px solid #333;border-radius:10px;padding:12px;margin:15px 0">
+            <div style="display:flex;justify-content:space-between;font-size:14px"><span>Total a pagar:</span><b id="modalTotal" style="color:var(--rosa)">$0 MXN</b></div>
+        </div>
+        <label class="label-rosa" style="text-align:left">Cantidad que da el cliente *</label>
+        <input id="cantidadEntregada" type="number" step="0.01" inputmode="decimal" class="form-control" placeholder="Ej: 500" style="background:#000!important;border:2px solid var(--rosa)!important;color:white!important;font-size:22px;font-weight:bold;text-align:center;padding:12px" oninput="calcularCambio()">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px">
+            <button onclick="setEntregado(100)" style="background:#222;color:white;border:1px solid #444;padding:8px;border-radius:6px;font-size:12px">$100</button>
+            <button onclick="setEntregado(200)" style="background:#222;color:white;border:1px solid #444;padding:8px;border-radius:6px;font-size:12px">$200</button>
+            <button onclick="setEntregado(500)" style="background:#222;color:white;border:1px solid #444;padding:8px;border-radius:6px;font-size:12px">$500</button>
+        </div>
+        <div style="background:#0a1a0f;border:2px solid #25D366;border-radius:10px;padding:12px;margin-top:15px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#888;font-size:13px">Cambio a devolver:</span><b id="modalCambio" style="color:#25D366;font-size:22px">$0.00 MXN</b></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px">
+            <button onclick="cerrarEfectivo()" style="background:#333;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cancelar</button>
+            <button onclick="confirmarEfectivo()" style="background:#25D366;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cobrar</button>
         </div>
     </div>
 </div>
+
 <script>
+let totalNum = parseFloat(document.getElementById('totalTicket').dataset.total || 0);
 function filtrar(cat){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));let btn=document.getElementById('btn-'+cat); if(btn) btn.classList.add('active');document.querySelectorAll('.prod-card').forEach(c=>{if(cat=='todos'||c.dataset.cat==cat)c.style.display='block';else c.style.display='none';})}
 document.getElementById('fechaPOS').textContent=new Date().toLocaleString('es-MX',{timeZone:'America/Cancun'});
-function actualizarTotalHoy(){
-    fetch('/api/total_hoy').then(r=>r.json()).then(d=>{
-        document.getElementById('totalHoy').textContent=d.total_mxn;
-    });
-}
+function actualizarTotalHoy(){fetch('/api/total_hoy').then(r=>r.json()).then(d=>{document.getElementById('totalHoy').textContent=d.total_mxn;});}
 setInterval(actualizarTotalHoy, 5000);
+
+function abrirEfectivo(){
+    if(totalNum<=0){alert('El ticket está vacío');return;}
+    document.getElementById('modalTotal').textContent='$'+totalNum.toFixed(2)+' MXN';
+    document.getElementById('cantidadEntregada').value=totalNum.toFixed(2);
+    calcularCambio();
+    document.getElementById('modalEfectivo').classList.add('show');
+    setTimeout(()=>document.getElementById('cantidadEntregada').select(),100);
+}
+function cerrarEfectivo(){document.getElementById('modalEfectivo').classList.remove('show');}
+function setEntregado(val){document.getElementById('cantidadEntregada').value=val;calcularCambio();}
+function calcularCambio(){
+    let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;
+    let cambio=entregado-totalNum;
+    document.getElementById('modalCambio').textContent='$'+cambio.toFixed(2)+' MXN';
+    document.getElementById('modalCambio').style.color=cambio>=0?'#25D366':'#ff4d8a';
+}
+function confirmarEfectivo(){
+    let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;
+    if(entregado < totalNum){alert('La cantidad es menor al total');return;}
+    location.href='/pos/pagar/efectivo?entregado='+entregado;
+}
 </script>
-""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
+""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", total_num=total, mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
 
 @app.route('/api/total_hoy')
 def api_total_hoy():
@@ -314,47 +326,76 @@ def api_total_hoy():
 
 @app.route('/pos/add/<int:id>')
 def pos_add(id):
-    prod=Producto.query.get(id)
-    carrito=session.get('carrito',[])
+    prod=Producto.query.get(id); carrito=session.get('carrito',[])
     for it in carrito:
-        if it['id']==prod.id:
-            it['cant']+=1
-            session['carrito']=carrito
-            session.modified=True
-            return redirect('/dashboard')
-    carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'cant':1})
-    session['carrito']=carrito
-    session.modified=True
-    return redirect('/dashboard')
-
+        if it['id']==prod.id: it['cant']+=1; session['carrito']=carrito; session.modified=True; return redirect('/dashboard')
+    carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'cant':1}); session['carrito']=carrito; session.modified=True; return redirect('/dashboard')
 @app.route('/pos/clear', methods=['GET','POST'])
 def pos_clear():
-    session['carrito']=[]
-    session.modified=True
-    return redirect('/dashboard')
-
+    session['carrito']=[]; session.modified=True; return redirect('/dashboard')
 @app.route('/pos/pagar/<metodo>')
 def pos_pagar_direct(metodo):
-    carrito=session.get('carrito',[])
-    if not carrito:
-        return redirect('/dashboard')
-    vendedor=session.get('user')
-    vendedor_nombre=session.get('nombre_completo','')
+    carrito=session.get('carrito',[]);
+    if not carrito: return redirect('/dashboard')
+    vendedor=session.get('user'); vendedor_nombre=session.get('nombre_completo','')
+    entregado = request.args.get('entregado', type=float)
     last_id=None
+    total_ticket=0
+    for it in carrito: total_ticket+=it['precio']*it['cant']
     for it in carrito:
         prod=Producto.query.get(it['id'])
-        if prod and prod.stock >= it['cant']:
-            prod.stock-=it['cant']
-        v=Venta(cliente='Mostrador',producto_nombre=it['nombre'],cantidad=it['cant'],total=it['precio']*it['cant'],vendedor=vendedor,vendedor_nombre=vendedor_nombre,metodo_pago=metodo)
-        db.session.add(v)
-        db.session.flush()
-        last_id=v.id
-    db.session.commit()
-    session['carrito']=[]
-    session.modified=True
+        if prod and prod.stock >= it['cant']: prod.stock-=it['cant']
+        v=Venta(cliente='Mostrador',producto_nombre=it['nombre'],cantidad=it['cant'],total=it['precio']*it['cant'],vendedor=vendedor,vendedor_nombre=vendedor_nombre,metodo_pago=metodo); db.session.add(v); db.session.flush(); last_id=v.id
+    db.session.commit(); session['carrito']=[]; session.modified=True
     if last_id:
+        if metodo=='efectivo' and entregado is not None:
+            cambio = entregado - total_ticket
+            return redirect(f'/ticket/{last_id}?entregado={entregado}&cambio={cambio}')
         return redirect(f'/ticket/{last_id}')
     return redirect('/dashboard')
+
+@app.route('/admin/categorias')
+def admin_categorias():
+    if not session.get('is_admin'): return redirect('/dashboard')
+    cats=Categoria.query.all()
+    return render_template_string(STYLE_BASE+nav()+"""
+<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between"><h5 style="color:var(--rosa)">🏷️ Categorías - Editar y Eliminar</h5><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:12px">+ Crear artículo</a></div>
+<table class="table table-dark table-sm mt-3" style="font-size:13px"><tr><th>ID</th><th>Nombre</th><th>Acciones</th></tr>
+{% for c in cats %}<tr><td>{{c.id}}</td><td>{{c.nombre}}</td><td><a href="/admin/categorias/editar/{{c.id}}" style="color:#00e5ff;margin-right:10px">Editar</a><a href="/admin/categorias/eliminar/{{c.id}}" onclick="return confirm('¿Eliminar categoría {{c.nombre}}?')" style="color:var(--rosa)">Eliminar</a></td></tr>{% endfor %}
+</table>
+<form method="POST" action="/admin/categorias/crear" class="d-flex gap-2 mt-3"><input name="nombre" class="form-control" placeholder="Nueva categoría" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa">Agregar</button></form>
+</div></div>
+""", cats=cats)
+
+@app.route('/admin/categorias/crear', methods=['POST'])
+def admin_categorias_crear():
+    if not session.get('is_admin'): return redirect('/dashboard')
+    nombre=request.form.get('nombre','').strip()
+    if nombre and not Categoria.query.filter_by(nombre=nombre).first():
+        db.session.add(Categoria(nombre=nombre)); db.session.commit()
+    return redirect('/admin/categorias')
+@app.route('/admin/categorias/editar/<int:id>', methods=['GET','POST'])
+def admin_categorias_editar(id):
+    if not session.get('is_admin'): return redirect('/dashboard')
+    cat=Categoria.query.get(id)
+    if request.method=='POST':
+        nuevo=request.form.get('nombre','').strip()
+        if nuevo:
+            old_name=cat.nombre; cat.nombre=nuevo
+            for p in Producto.query.filter_by(categoria=old_name).all(): p.categoria=nuevo
+            db.session.commit()
+        return redirect('/admin/categorias')
+    return render_template_string(STYLE_BASE+nav()+f"""
+<div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:var(--rosa)">Editar Categoría</h5>
+<form method="POST" class="mt-3"><label class="label-rosa">Nombre</label><input name="nombre" class="form-control mb-3" value="{cat.nombre}" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa w-100">Guardar</button></form>
+<a href="/admin/categorias" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a></div></div>
+""")
+@app.route('/admin/categorias/eliminar/<int:id>')
+def admin_categorias_eliminar(id):
+    if not session.get('is_admin'): return redirect('/dashboard')
+    cat=Categoria.query.get(id)
+    if cat: db.session.delete(cat); db.session.commit()
+    return redirect('/admin/categorias')
 
 @app.route('/admin/mesas', methods=['GET','POST'])
 def admin_mesas():
@@ -366,10 +407,10 @@ def admin_mesas():
         return redirect('/admin/mesas')
     mesas=Mesa.query.all()
     return render_template_string(STYLE_BASE+nav()+"""
-<div class="container mt-3"><div class="card"><h5 style="color:#ff4d8a">🪑 Administrar Mesas</h5>
+<div class="container mt-3"><div class="card"><h5 style="color:var(--rosa)">🪑 Administrar Mesas</h5>
 <form method="POST" class="d-flex gap-2 mt-3"><input name="nombre" class="form-control" placeholder="Ej: Mesa 13" required><button class="btn-rosa">Agregar</button></form>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:15px">
-{% for m in mesas %}<div style="background:#111;border:2px solid {% if m.estado=='ocupada' %}#ff4d8a{% else %}#333{% endif %};border-radius:10px;padding:12px;text-align:center"><b>{{m.nombre}}</b><br><small>{{m.estado}} - {{m.total_mxn}}</small><br>{% if m.estado=='libre' %}<a href="/admin/mesas/eliminar/{{m.id}}" onclick="return confirm('¿Eliminar {{m.nombre}}?')" style="color:#ff4d8a;font-size:12px">Eliminar</a>{% else %}<small style="color:#888">Ocupada</small>{% endif %}</div>{% endfor %}
+{% for m in mesas %}<div style="background:#111;border:2px solid {% if m.estado=='ocupada' %}var(--rosa){% else %}#333{% endif %};border-radius:10px;padding:12px;text-align:center"><b>{{m.nombre}}</b><br><small>{{m.estado}} - {{m.total_mxn}}</small><br>{% if m.estado=='libre' %}<a href="/admin/mesas/eliminar/{{m.id}}" onclick="return confirm('¿Eliminar {{m.nombre}}?')" style="color:var(--rosa);font-size:12px">Eliminar</a>{% else %}<small style="color:#888">Ocupada</small>{% endif %}</div>{% endfor %}
 </div></div></div>
 """, mesas=[{'id':m.id,'nombre':m.nombre,'estado':m.estado,'total_mxn':format_mxn(m.total or 0)} for m in mesas])
 
@@ -387,24 +428,17 @@ def mesas_view():
 
 @app.route('/mesa/<int:id>')
 def mesa_detalle(id):
-    mesa=Mesa.query.get(id)
-    productos=Producto.query.filter_by(disponible=True).all()
+    mesa=Mesa.query.get(id); productos=Producto.query.filter_by(disponible=True).all()
     for p in productos: p.img_url=get_producto_imagen(p)
     carrito=session.get(f'mesa_carrito_{id}',[]); total_nuevo=sum([x['precio']*x['cant'] for x in carrito]); comandas=[c for c in mesa.comandas if c.estado!='entregado']
     return render_template_string(STYLE_BASE+nav()+"""
 <div style="display:flex;height:calc(100vh - 60px);gap:10px;padding:10px">
 <div style="width:45%;background:#111;border:2px solid #00e5ff;border-radius:12px;padding:10px;overflow:auto;display:flex;flex-direction:column">
 <h6 style="color:#00e5ff">{{mesa.nombre}} - {{mesa.total_mxn}}</h6>
-<div style="flex:1;overflow:auto">
-{% for c in comandas %}<div style="background:white;color:black;padding:6px;border-radius:6px;margin-bottom:5px;font-size:12px"><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}</div>{% endfor %}
-<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES</b>
-{% for it in carrito %}<div style="background:#fffde7;color:black;padding:5px;border-radius:4px;margin-top:5px;font-size:12px">{{it.nombre}} x{{it.cant}} - {{it.total_mxn}}<form action="/mesa/{{mesa.id}}/carrito/coment/{{loop.index0}}" method="POST" style="display:flex;gap:3px"><input name="comentario" value="{{it.comentario}}" class="form-control" style="font-size:11px" placeholder="💬 Comentario"><button>💾</button></form></div>{% endfor %}
+<div style="flex:1;overflow:auto">{% for c in comandas %}<div style="background:white;color:black;padding:6px;border-radius:6px;margin-bottom:5px;font-size:12px"><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}</div>{% endfor %}<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES</b>{% for it in carrito %}<div style="background:#fffde7;color:black;padding:5px;border-radius:4px;margin-top:5px;font-size:12px">{{it.nombre}} x{{it.cant}} - {{it.total_mxn}}<form action="/mesa/{{mesa.id}}/carrito/coment/{{loop.index0}}" method="POST" style="display:flex;gap:3px"><input name="comentario" value="{{it.comentario}}" class="form-control" style="font-size:11px" placeholder="💬 Comentario"><button>💾</button></form></div>{% endfor %}</div>
+<div style="border-top:2px solid var(--rosa);padding-top:10px"><b>Total Final {{total_final_mxn}}</b><br><a href="/mesa/{{mesa.id}}/enviar" style="background:#00e5ff;color:black;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">MANDAR A COCINA</a><a href="/mesa/{{mesa.id}}/cobrar" style="background:#25D366;color:white;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">💰 COBRAR MESA</a></div>
 </div>
-<div style="border-top:2px solid #ff4d8a;padding-top:10px"><b>Total Final {{total_final_mxn}}</b><br><a href="/mesa/{{mesa.id}}/enviar" style="background:#00e5ff;color:black;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">MANDAR A COCINA</a><a href="/mesa/{{mesa.id}}/cobrar" style="background:#25D366;color:white;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">💰 COBRAR MESA</a></div>
-</div>
-<div style="width:55%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow:auto">
-{% for p in productos %}<div style="background:white;color:#333;border-radius:8px;padding:6px;text-align:center;cursor:pointer" onclick="location='/mesa/{{mesa.id}}/add/{{p.id}}'"><img src="{{p.img_url}}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"><br><small>{{p.nombre}}</small><br><small style="color:#ff4d8a;font-weight:bold">{{p.precio_mxn}}</small></div>{% endfor %}
-</div>
+<div style="width:55%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow:auto">{% for p in productos %}<div style="background:white;color:#333;border-radius:8px;padding:6px;text-align:center;cursor:pointer" onclick="location='/mesa/{{mesa.id}}/add/{{p.id}}'"><img src="{{p.img_url}}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"><br><small>{{p.nombre}}</small><br><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small></div>{% endfor %}</div>
 </div>
 """, mesa={'id':mesa.id,'nombre':mesa.nombre,'total_mxn':format_mxn(mesa.total or 0)}, productos=[{'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio),'img_url':p.img_url} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'comentario':x.get('comentario',''),'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], comandas=comandas, total_final_mxn=format_mxn((mesa.total or 0)+total_nuevo))
 
@@ -419,8 +453,7 @@ def mesa_carrito_coment(mesa_id,index):
     return redirect(f'/mesa/{mesa_id}')
 @app.route('/mesa/<int:mesa_id>/enviar')
 def mesa_enviar(mesa_id):
-    mesa=Mesa.query.get(mesa_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[])
-    mesero=session.get('user'); mesero_nombre=session.get('nombre_completo','')
+    mesa=Mesa.query.get(mesa_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[]); mesero=session.get('user'); mesero_nombre=session.get('nombre_completo','')
     for it in carrito:
         com=Comanda(mesa_id=mesa.id,producto_nombre=it['nombre'],cantidad=it['cant'],mesero=mesero,mesero_nombre=mesero_nombre,estado='cocina',comentario=it.get('comentario','')); mesa.total=(mesa.total or 0)+it['precio']*it['cant']; mesa.estado='ocupada'; db.session.add(com)
     db.session.commit(); session[f'mesa_carrito_{mesa_id}']=[]; session.modified=True; return redirect(f'/mesa/{mesa_id}')
@@ -433,13 +466,11 @@ def mesa_cobrar_final(id,metodo):
     mesa=Mesa.query.get(id); vendedor=session.get('user'); vendedor_nombre=session.get('nombre_completo','')
     for c in list(mesa.comandas):
         if c.estado!='entregado':
-            prod=Producto.query.filter_by(nombre=c.producto_nombre).first()
-            precio=prod.precio if prod else 0
+            prod=Producto.query.filter_by(nombre=c.producto_nombre).first(); precio=prod.precio if prod else 0
             v=Venta(cliente=mesa.nombre,producto_nombre=c.producto_nombre+(f" ({c.comentario})" if c.comentario else ""),cantidad=c.cantidad,total=precio*c.cantidad,vendedor=vendedor,vendedor_nombre=vendedor_nombre,metodo_pago=metodo); db.session.add(v); c.estado='entregado'
     mesa.estado='libre'; mesa.total=0; db.session.commit()
     v=Venta.query.filter_by(vendedor=vendedor).order_by(Venta.id.desc()).first()
-    if v: return redirect(f'/ticket/{v.id}')
-    return redirect('/mesas')
+    return redirect(f'/ticket/{v.id}') if v else redirect('/mesas')
 
 @app.route('/cocina')
 def cocina_view():
@@ -463,7 +494,7 @@ def productos_list():
     if not session.get('is_admin'): return redirect('/dashboard')
     productos=Producto.query.all()
     for p in productos: p.img_url=get_producto_imagen(p)
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:#4caf50;color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/eliminar/{{p.id}}" style="color:red">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos])
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/eliminar/{{p.id}}" style="color:red">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos])
 
 @app.route('/productos/nuevo', methods=['GET','POST'])
 def productos_nuevo():
@@ -471,29 +502,21 @@ def productos_nuevo():
     categorias=Categoria.query.all()
     if request.method=='POST':
         imagen_path=save_upload(request.files['imagen']) if 'imagen' in request.files else ""
-        p=Producto(nombre=request.form.get('nombre','').strip() or 'Sin nombre',descripcion=request.form.get('descripcion',''),categoria=request.form.get('categoria','Sin categoria'),disponible='disponible' in request.form,precio=float(request.form.get('precio') or 0),stock=int(request.form.get('en_stock') or 0),imagen=imagen_path)
+        p=Producto(nombre=request.form.get('nombre','').strip() or 'Sin nombre',descripcion=request.form.get('descripcion',''),categoria=request.form.get('categoria','Sin categoria'),disponible='disponible' in request.form,vendido_por=request.form.get('vendido_por','Unidad'),precio=float(request.form.get('precio') or 0),costo=float(request.form.get('coste') or 0),stock=int(request.form.get('stock') or 0),ref=request.form.get('ref',''),codigo_barras=request.form.get('codigo_barras',''),imagen=imagen_path)
         db.session.add(p); db.session.commit(); return redirect('/productos')
     return render_template_string(STYLE_BASE+nav()+"""
-<div style="background:#000;min-height:100vh">
-<div class="header-rosa-negro">☰ Crear artículo <a href="/productos" style="margin-left:auto;background:#111;color:#ff4d8a;border:2px solid #ff4d8a;padding:6px 12px;border-radius:8px;text-decoration:none;font-size:13px">← Volver</a></div>
-<form method="POST" enctype="multipart/form-data">
-<div class="card-negra">
-<div class="row"><div class="col-md-6"><label class="label-rosa">NOMBRE *</label><input name="nombre" class="input-rosa" placeholder="Ej: Agua, botella 0.5L" style="font-size:20px;font-weight:bold" required></div>
-<div class="col-md-6"><label class="label-rosa">CATEGORÍA</label><div style="display:flex;gap:6px"><select name="categoria" id="catSelect" class="select-rosa" style="flex:1">{% for cat in categorias %}<option value="{{cat.nombre}}">{{cat.nombre}}</option>{% endfor %}</select><button type="button" onclick="nuevaCategoria()" style="background:#ff4d8a;color:white;border:none;padding:6px 10px;border-radius:8px;font-size:11px;font-weight:bold">+ NUEVA</button></div></div></div>
-<div class="row" style="margin-top:15px"><div class="col-md-4"><label class="label-rosa">PRECIO MXN *</label><input name="precio" type="number" step="0.01" class="input-rosa" placeholder="0.00" required></div><div class="col-md-4"><label class="label-rosa">EN STOCK</label><input name="en_stock" type="number" class="input-rosa" placeholder="0"></div><div class="col-md-4"><label class="label-rosa">FOTO</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:2px solid #ff4d8a!important"></div></div>
-<button style="background:#ff4d8a;color:white;border:none;padding:12px 30px;border-radius:10px;font-weight:bold;margin-top:20px">💾 GUARDAR ARTÍCULO</button>
-</div>
-</form>
-</div>
+<div class="crear-wrapper"><div class="crear-header"><span>☰ Crear artículo</span><a href="/productos" style="background:#000;color:white;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;border:1px solid white">← Volver</a></div>
+    <form method="POST" enctype="multipart/form-data"><div class="crear-card"><div class="row"><div class="col-md-6"><label class="crear-label-rosa">Nombre *</label><input name="nombre" class="crear-input" placeholder="Ej: Agua, botella 0.5L" style="font-size:18px;font-weight:bold" required></div>
+                <div class="col-md-6"><div style="display:flex;justify-content:space-between;align-items:center"><label class="crear-label">Categoría (editable)</label><a href="/admin/categorias" style="color:var(--rosa);font-size:11px;text-decoration:underline">Editar categorías</a></div><div style="display:flex;gap:8px;align-items:center"><select name="categoria" id="catSelect" class="form-control" style="background:#111!important;color:white!important;border:1px solid #333!important;flex:1">{% for cat in categorias %}<option value="{{cat.nombre}}">{{cat.nombre}}</option>{% endfor %}</select><button type="button" onclick="nuevaCategoria()" style="background:var(--rosa);color:white;border:none;padding:8px 12px;border-radius:6px;font-size:11px;font-weight:bold;line-height:1">+<br>Nueva</button></div></div></div>
+            <label class="crear-label" style="margin-top:20px">Descripción</label><textarea name="descripcion" class="crear-input" rows="2" placeholder="Descripción opcional"></textarea>
+            <div style="margin-top:20px"><label style="font-size:14px"><input type="checkbox" name="disponible" checked style="accent-color:var(--rosa)"> El artículo está disponible para la venta</label></div>
+            <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" checked style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
+            <div class="row" style="margin-top:20px"><div class="col-md-6"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" placeholder="10,00" required></div><div class="col-md-6"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" placeholder="5,00"></div></div>
+            <div class="row" style="margin-top:15px"><div class="col-md-6"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-6"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto (visible para TODOS)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR ARTÍCULO</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
 <script>
-function nuevaCategoria(){
-  let nombre=prompt("Nombre nueva categoría:");
-  if(!nombre) return;
-  fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{
-    if(d.ok){ let sel=document.getElementById('catSelect'); let opt=document.createElement('option'); opt.value=d.nombre; opt.text=d.nombre; opt.selected=true; sel.add(opt); }
-    else alert("Ya existe");
-  })
-}
+function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}
 </script>
 """, categorias=categorias)
 
@@ -515,11 +538,11 @@ def eliminar_producto(id):
 def dueno_view():
     if not session.get('is_admin'): return redirect('/dashboard')
     return render_template_string(STYLE_BASE+nav()+"""
-<div class="container mt-3"><div class="card" style="border-color:#ff4d8a"><h4 style="color:#ff4d8a">💰 Dueño - Ventas vs Gastos</h4>
-<div style="display:flex;gap:10px;margin-top:15px"><select id="periodo" class="form-control" style="width:150px;background:#111!important;color:white!important;border:2px solid #ff4d8a!important" onchange="cargarGrafica()"><option value="dia">Día</option><option value="mes" selected>Mes</option><option value="ano">Año</option></select><button onclick="cargarGrafica()" style="background:#ff4d8a;color:white;border:none;padding:6px 12px;border-radius:6px">Actualizar</button></div>
-<div style="background:#111;border:2px solid #ff4d8a;border-radius:12px;padding:15px;margin-top:15px"><canvas id="graficaVentasGastos" height="100"></canvas></div>
-<div class="row mt-3"><div class="col-md-4"><div class="card"><h6>Ventas</h6><h3 id="totalVentas" style="color:#25D366">$0 MXN</h3></div></div><div class="col-md-4"><div class="card"><h6>Gastos</h6><h3 id="totalGastos" style="color:#ff4d8a">$0 MXN</h3></div></div><div class="col-md-4"><div class="card"><h6>Ganancia</h6><h3 id="totalGanancia" style="color:#ff4d8a">$0 MXN</h3></div></div></div>
-<div class="card mt-3"><h6>Agregar gasto</h6><form id="formGasto" class="d-flex gap-2 mt-2"><input id="concepto" class="form-control" placeholder="Concepto" required><input id="monto" type="number" step="0.01" class="form-control" placeholder="Monto MXN" required><button style="background:#ff4d8a;color:white;border:none;padding:6px 12px;border-radius:6px">Agregar</button></form></div>
+<div class="container mt-3"><div class="card"><h4 style="color:var(--rosa)">💰 Dueño - Ventas vs Gastos</h4>
+<div style="display:flex;gap:10px;margin-top:15px"><select id="periodo" class="form-control" style="width:150px;background:#111!important;color:white!important;border:2px solid var(--rosa)!important" onchange="cargarGrafica()"><option value="dia">Día</option><option value="mes" selected>Mes</option><option value="ano">Año</option></select><button onclick="cargarGrafica()" style="background:var(--rosa);color:white;border:none;padding:6px 12px;border-radius:6px">Actualizar</button></div>
+<div style="background:#111;border:2px solid var(--rosa);border-radius:12px;padding:15px;margin-top:15px"><canvas id="graficaVentasGastos" height="100"></canvas></div>
+<div class="row mt-3"><div class="col-md-4"><div class="card"><h6>Ventas</h6><h3 id="totalVentas" style="color:#25D366">$0 MXN</h3></div></div><div class="col-md-4"><div class="card"><h6>Gastos</h6><h3 id="totalGastos" style="color:var(--rosa)">$0 MXN</h3></div></div><div class="col-md-4"><div class="card"><h6>Ganancia</h6><h3 id="totalGanancia" style="color:var(--rosa)">$0 MXN</h3></div></div></div>
+<div class="card mt-3"><h6>Agregar gasto</h6><form id="formGasto" class="d-flex gap-2 mt-2"><input id="concepto" class="form-control" placeholder="Concepto" required><input id="monto" type="number" step="0.01" class="form-control" placeholder="Monto MXN" required><button style="background:var(--rosa);color:white;border:none;padding:6px 12px;border-radius:6px">Agregar</button></form></div>
 </div></div>
 <script>
 let chart;
@@ -580,14 +603,23 @@ def admin_config():
             if nl: cfg.logo_path=nl
         cfg.mod_pos_mesero='mod_pos_mesero' in request.form
         db.session.commit(); return redirect('/admin/config')
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo</h4><div class="text-center" style="display:flex;justify-content:center"><img src="/static/{{cfg.logo_path}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid #ff4d8a;display:block;margin:0 auto"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg)
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo</h4><div class="text-center" style="display:flex;justify-content:center"><img src="/static/{{cfg.logo_path}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid var(--rosa);display:block;margin:0 auto"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg)
 
 @app.route('/ticket/<int:id>')
 def ticket(id):
     v=Venta.query.get(id)
     if not v: return redirect('/dashboard')
-    cfg=get_config()
-    return render_template_string(STYLE_BASE+f'<div class="container mt-5" style="max-width:350px"><div class="card" style="background:white;color:black"><h5>Ticket #{v.id}</h5><p><b>{v.producto_nombre}</b><br>Total: {format_mxn(v.total)}<br>Pago: {v.metodo_pago}<br>Atendió: {v.vendedor_nombre}<br><small style="color:#888">Usuario: {v.vendedor}</small><br><small id="fechaPC" style="color:#888"></small></p><button onclick="window.print()" class="btn-rosa w-100">Imprimir</button><a href="/dashboard" class="btn btn-dark w-100 mt-2">Volver</a></div></div><script>document.getElementById("fechaPC").textContent=new Date().toLocaleString("es-MX",{{timeZone:"America/Cancun"}})</script>')
+    entregado = request.args.get('entregado', type=float)
+    cambio = request.args.get('cambio', type=float)
+    entregado_mxn = format_mxn(entregado) if entregado is not None else None
+    cambio_mxn = format_mxn(cambio) if cambio is not None else None
+    return render_template_string(STYLE_BASE+f"""
+<div class="container mt-5" style="max-width:380px"><div class="card" style="background:white;color:black;border:2px solid var(--rosa)">
+    <h5 style="text-align:center">Ticket #{v.id}</h5>
+    <p style="font-size:13px"><b>{v.producto_nombre}</b><br>Total: {format_mxn(v.total)}<br>Pago: {v.metodo_pago.upper()}<br>Atendió: {v.vendedor_nombre}<br><small style="color:#888">Usuario: {v.vendedor}</small><br><small id="fechaPC" style="color:#888"></small></p>
+    {"<div style='background:#0a1a0f;border:2px solid #25D366;border-radius:8px;padding:10px;margin:10px 0'><div style='display:flex;justify-content:space-between'><span>Entregado:</span><b>"+entregado_mxn+"</b></div><div style='display:flex;justify-content:space-between;margin-top:5px'><span>Cambio:</span><b style='color:#25D366;font-size:18px'>"+cambio_mxn+"</b></div></div>" if entregado_mxn else ""}
+    <button onclick="window.print()" class="btn-rosa w-100">Imprimir</button><a href="/dashboard" class="btn btn-dark w-100 mt-2">Volver POS</a></div></div><script>document.getElementById("fechaPC").textContent=new Date().toLocaleString("es-MX",{{timeZone:"America/Cancun"}})</script>
+""")
 
 @app.route('/ventas')
 def ventas():
@@ -595,20 +627,17 @@ def ventas():
     is_admin=session.get('is_admin')
     vs=Venta.query.order_by(Venta.id.desc()).limit(200).all()
     return render_template_string(STYLE_BASE+nav()+"""
-<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h5 style="color:#ff4d8a">🧾 Ventas - MXN (Admin puede eliminar)</h5><span style="color:#888;font-size:11px">Total: {{total_mxn}} - {{vs|length}} tickets</span></div>
+<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h5 style="color:var(--rosa)">🧾 Ventas - MXN (Admin puede eliminar)</h5><span style="color:#888;font-size:11px">Total: {{total_mxn}} - {{vs|length}} tickets</span></div>
 <table class="table table-dark table-sm mt-3" style="font-size:11px"><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Total</th><th>Pago</th><th>Vendedor</th>{% if is_admin %}<th>Acción</th>{% endif %}</tr>
-{% for v in vs %}<tr><td>{{v.id}}</td><td>{{v.fecha.strftime('%d/%m %H:%M')}}</td><td>{{v.cliente}}</td><td>{{v.producto_nombre}} x{{v.cantidad}}</td><td style="color:#25D366;font-weight:bold">{{v.total_mxn}}</td><td>{{v.metodo_pago}}</td><td>{{v.vendedor_nombre}}</td>{% if is_admin %}<td><a href="/ventas/eliminar/{{v.id}}" onclick="return confirm('¿Eliminar ticket #{{v.id}} de {{v.total_mxn}}? Esta acción no se puede deshacer')" style="color:#ff4d8a;font-weight:bold">Eliminar</a></td>{% endif %}</tr>{% endfor %}
+{% for v in vs %}<tr><td>{{v.id}}</td><td>{{v.fecha.strftime('%d/%m %H:%M')}}</td><td>{{v.cliente}}</td><td>{{v.producto_nombre}} x{{v.cantidad}}</td><td style="color:#25D366;font-weight:bold">{{v.total_mxn}}</td><td>{{v.metodo_pago}}</td><td>{{v.vendedor_nombre}}</td>{% if is_admin %}<td><a href="/ventas/eliminar/{{v.id}}" onclick="return confirm('¿Eliminar ticket #{{v.id}}?')" style="color:var(--rosa);font-weight:bold">Eliminar</a></td>{% endif %}</tr>{% endfor %}
 </table></div></div>
 """, vs=[{'id':v.id,'fecha':v.fecha,'cliente':v.cliente,'producto_nombre':v.producto_nombre,'cantidad':v.cantidad,'total_mxn':format_mxn(v.total),'metodo_pago':v.metodo_pago.upper(),'vendedor_nombre':v.vendedor_nombre or v.vendedor} for v in vs], is_admin=is_admin, total_mxn=format_mxn(sum([v.total or 0 for v in vs])))
 
 @app.route('/ventas/eliminar/<int:id>')
 def ventas_eliminar(id):
-    if not session.get('is_admin'):
-        return redirect('/dashboard')
+    if not session.get('is_admin'): return redirect('/dashboard')
     v=Venta.query.get(id)
-    if v:
-        db.session.delete(v)
-        db.session.commit()
+    if v: db.session.delete(v); db.session.commit()
     return redirect('/ventas')
 
 @app.route('/admin/usuarios', methods=['GET','POST'])
@@ -627,18 +656,10 @@ def admin_usuarios():
     usuarios=User.query.all()
     return render_template_string(STYLE_BASE+nav()+"""
 <div class="container mt-3"><div class="card"><h5>👥 Usuarios - Editar y Restablecer</h5>
-<form method="POST" class="row g-2">
-<div class="col-md-3"><input name="nombre_completo" class="form-control" placeholder="Nombre completo *" required></div>
-<div class="col-md-2"><input name="username" class="form-control" placeholder="Usuario *" required></div>
-<div class="col-md-2"><input name="password" type="password" class="form-control" placeholder="Contraseña *" required></div>
-<div class="col-md-2"><select name="rol" class="form-control"><option value="cajero">Cajero</option><option value="mesero">Mesero</option><option value="cocina">Cocina</option></select></div>
-<div class="col-md-1"><label><input type="checkbox" name="is_admin"> Admin</label></div>
-<div class="col-md-2"><button class="btn-rosa w-100">Crear</button></div>
-</form>
+<form method="POST" class="row g-2"><div class="col-md-3"><input name="nombre_completo" class="form-control" placeholder="Nombre completo *" required></div><div class="col-md-2"><input name="username" class="form-control" placeholder="Usuario *" required></div><div class="col-md-2"><input name="password" type="password" class="form-control" placeholder="Contraseña *" required></div><div class="col-md-2"><select name="rol" class="form-control"><option value="cajero">Cajero</option><option value="mesero">Mesero</option><option value="cocina">Cocina</option></select></div><div class="col-md-1"><label><input type="checkbox" name="is_admin"> Admin</label></div><div class="col-md-2"><button class="btn-rosa w-100">Crear</button></div></form>
 <table class="table table-dark mt-3"><tr><th>Nombre Completo</th><th>Usuario</th><th>Rol</th><th>Acciones</th></tr>
-{% for u in usuarios %}<tr><td>{{u.nombre_completo}}</td><td>{{u.username}}</td><td>{% if u.is_admin %}ADMIN{% else %}{{u.rol}}{% endif %}</td><td><a href="/admin/usuarios/editar/{{u.id}}" style="color:#00e5ff;font-size:12px;margin-right:8px">Editar</a><a href="/admin/usuarios/reset/{{u.id}}" style="color:#ffcc00;font-size:12px;margin-right:8px">Reset</a><a href="/admin/usuarios/eliminar/{{u.id}}" onclick="return confirm('Eliminar {{u.username}}?')" style="color:#ff4d8a;font-size:12px">Eliminar</a></td></tr>{% endfor %}
-</table>
-</div></div>
+{% for u in usuarios %}<tr><td>{{u.nombre_completo}}</td><td>{{u.username}}</td><td>{% if u.is_admin %}ADMIN{% else %}{{u.rol}}{% endif %}</td><td><a href="/admin/usuarios/editar/{{u.id}}" style="color:#00e5ff;font-size:12px;margin-right:8px">Editar</a><a href="/admin/usuarios/reset/{{u.id}}" style="color:#ffcc00;font-size:12px;margin-right:8px">Reset</a><a href="/admin/usuarios/eliminar/{{u.id}}" onclick="return confirm('Eliminar {{u.username}}?')" style="color:var(--rosa);font-size:12px">Eliminar</a></td></tr>{% endfor %}
+</table></div></div>
 """, usuarios=usuarios)
 
 @app.route('/admin/usuarios/editar/<int:id>', methods=['GET','POST'])
@@ -652,22 +673,12 @@ def admin_usuarios_editar(id):
         u.rol=request.form.get('rol',u.rol)
         u.is_admin='is_admin' in request.form
         nueva_pass=request.form.get('password','').strip()
-        if nueva_pass:
-            u.password=generate_password_hash(nueva_pass)
+        if nueva_pass: u.password=generate_password_hash(nueva_pass)
         db.session.commit()
         return redirect('/admin/usuarios')
     return render_template_string(STYLE_BASE+nav()+f"""
-<div class="container mt-3"><div class="card" style="max-width:500px;margin:0 auto"><h5 style="color:#ff4d8a">Editar Usuario - {u.username}</h5>
-<form method="POST" class="mt-3">
-<label class="label-rosa">Nombre completo</label><input name="nombre_completo" class="form-control mb-2" value="{u.nombre_completo}" required>
-<label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" value="{u.username}" required>
-<label class="label-rosa">Rol</label><select name="rol" class="form-control mb-2"><option value="cajero" {"selected" if u.rol=="cajero" else ""}>Cajero</option><option value="mesero" {"selected" if u.rol=="mesero" else ""}>Mesero</option><option value="cocina" {"selected" if u.rol=="cocina" else ""}>Cocina</option></select>
-<label><input type="checkbox" name="is_admin" {"checked" if u.is_admin else ""}> Es Administrador</label>
-<label class="label-rosa">Nueva Contraseña (dejar en blanco para no cambiar)</label><input name="password" type="password" class="form-control mb-3" placeholder="Nueva contraseña">
-<button class="btn-rosa w-100">Guardar Cambios</button>
-</form>
-<a href="/admin/usuarios" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a>
-</div></div>
+<div class="container mt-3"><div class="card" style="max-width:500px;margin:0 auto"><h5 style="color:var(--rosa)">Editar Usuario - {u.username}</h5>
+<form method="POST" class="mt-3"><label class="label-rosa">Nombre completo</label><input name="nombre_completo" class="form-control mb-2" value="{u.nombre_completo}" required><label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" value="{u.username}" required><label class="label-rosa">Rol</label><select name="rol" class="form-control mb-2"><option value="cajero" {"selected" if u.rol=="cajero" else ""}>Cajero</option><option value="mesero" {"selected" if u.rol=="mesero" else ""}>Mesero</option><option value="cocina" {"selected" if u.rol=="cocina" else ""}>Cocina</option></select><label><input type="checkbox" name="is_admin" {"checked" if u.is_admin else ""}> Es Administrador</label><label class="label-rosa">Nueva Contraseña (dejar en blanco para no cambiar)</label><input name="password" type="password" class="form-control mb-3" placeholder="Nueva contraseña"><button class="btn-rosa w-100">Guardar Cambios</button></form><a href="/admin/usuarios" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a></div></div>
 """)
 
 @app.route('/admin/usuarios/reset/<int:id>', methods=['GET','POST'])
@@ -675,20 +686,12 @@ def admin_usuarios_reset(id):
     if not session.get('is_admin'): return redirect('/dashboard')
     u=User.query.get(id)
     if request.method=='POST':
-        nueva=request.form.get('nueva','').strip()
-        confirmar=request.form.get('confirmar','').strip()
+        nueva=request.form.get('nueva','').strip(); confirmar=request.form.get('confirmar','').strip()
         if nueva==confirmar and len(nueva)>=4:
-            u.password=generate_password_hash(nueva)
-            db.session.commit()
-            return redirect('/admin/usuarios')
+            u.password=generate_password_hash(nueva); db.session.commit(); return redirect('/admin/usuarios')
     return render_template_string(STYLE_BASE+nav()+f"""
 <div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:#ffcc00">Reset Contraseña - {u.nombre_completo}</h5>
-<form method="POST">
-<label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required>
-<label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required>
-<button class="btn-rosa w-100" style="background:#ffcc00;color:black">Restablecer</button>
-</form>
-</div></div>
+<form method="POST"><label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required><label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required><button class="btn-rosa w-100" style="background:#ffcc00;color:black">Restablecer</button></form></div></div>
 """)
 
 @app.route('/admin/usuarios/eliminar/<int:id>')
