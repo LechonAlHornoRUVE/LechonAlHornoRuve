@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-final-completo-fix-ticket-null'
+app.secret_key = 'ruve-final-total-real-eliminar-ticket'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -216,7 +216,7 @@ def restablecer():
         else:
             u.password=generate_password_hash(nueva)
             db.session.commit()
-            msg=f"Contraseña de {u.nombre_completo} ({u.username}) restablecida. Ya puedes ingresar."
+            msg=f"Contraseña de {u.nombre_completo} ({u.username}) restablecida."
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
     <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px">
@@ -246,10 +246,23 @@ def dashboard():
     carrito=session.get('carrito',[]); total=sum([x['precio']*x['cant'] for x in carrito])
     mesas_ocupadas=Mesa.query.filter_by(estado='ocupada').all()
     cats=Categoria.query.all()
+    # total hoy
+    today = datetime.now().date()
+    start = datetime(today.year, today.month, today.day)
+    total_hoy_val = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
     return render_template_string(STYLE_BASE+nav()+"""
 <div class="pos-container">
     <div class="pos-left">
-        <div class="ticket-header"><small style="color:#ff4d8a;font-weight:bold">TICKET - MOSTRADOR</small><small id="fechaPOS" style="color:#888;font-size:10px"></small></div>
+        <div class="ticket-header">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <small style="color:#ff4d8a;font-weight:bold">TICKET - MOSTRADOR</small>
+                <small id="fechaPOS" style="color:#888;font-size:9px"></small>
+            </div>
+            <div style="background:#0a1a0f;border:1px solid #25D366;border-radius:8px;padding:6px 8px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+                <small style="color:#25D366;font-weight:bold;font-size:10px">VENTA HOY</small>
+                <b id="totalHoy" style="color:#25D366;font-size:13px">{{total_hoy_mxn}}</b>
+            </div>
+        </div>
         <div class="ticket-body">
             {% for item in carrito %}<div style="display:flex;justify-content:space-between;border-bottom:1px dashed #ccc;padding:6px 0;font-size:12px"><span>{{item.nombre}} x{{item.cant}}</span><span>{{item.total_mxn}}</span></div>{% endfor %}
             {% if not carrito %}<p style="color:#888;text-align:center;margin-top:20px;font-size:12px">Toca un producto →</p>{% endif %}
@@ -282,8 +295,22 @@ def dashboard():
 <script>
 function filtrar(cat){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));let btn=document.getElementById('btn-'+cat); if(btn) btn.classList.add('active');document.querySelectorAll('.prod-card').forEach(c=>{if(cat=='todos'||c.dataset.cat==cat)c.style.display='block';else c.style.display='none';})}
 document.getElementById('fechaPOS').textContent=new Date().toLocaleString('es-MX',{timeZone:'America/Cancun'});
+function actualizarTotalHoy(){
+    fetch('/api/total_hoy').then(r=>r.json()).then(d=>{
+        document.getElementById('totalHoy').textContent=d.total_mxn;
+    });
+}
+setInterval(actualizarTotalHoy, 5000);
 </script>
-""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats)
+""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
+
+@app.route('/api/total_hoy')
+def api_total_hoy():
+    today = datetime.now().date()
+    start = datetime(today.year, today.month, today.day)
+    ventas = Venta.query.filter(Venta.fecha>=start).all()
+    total = sum([v.total or 0 for v in ventas])
+    return jsonify({'total':total,'total_mxn':format_mxn(total)})
 
 @app.route('/pos/add/<int:id>')
 def pos_add(id):
@@ -328,26 +355,6 @@ def pos_pagar_direct(metodo):
     if last_id:
         return redirect(f'/ticket/{last_id}')
     return redirect('/dashboard')
-
-@app.route('/pos/pagar', methods=['POST'])
-def pos_pagar():
-    data=request.get_json()
-    metodo=data.get('tipo','efectivo') if data else 'efectivo'
-    carrito=session.get('carrito',[])
-    if not carrito:
-        return jsonify({'ok':False})
-    vendedor=session.get('user')
-    vendedor_nombre=session.get('nombre_completo','')
-    last=None
-    for it in carrito:
-        v=Venta(cliente='Mostrador',producto_nombre=it['nombre'],cantidad=it['cant'],total=it['precio']*it['cant'],vendedor=vendedor,vendedor_nombre=vendedor_nombre,metodo_pago=metodo)
-        db.session.add(v)
-        db.session.flush()
-        last=v.id
-    db.session.commit()
-    session['carrito']=[]
-    session.modified=True
-    return jsonify({'ok':True,'ticket_id':last})
 
 @app.route('/admin/mesas', methods=['GET','POST'])
 def admin_mesas():
@@ -473,8 +480,6 @@ def productos_nuevo():
 <div class="card-negra">
 <div class="row"><div class="col-md-6"><label class="label-rosa">NOMBRE *</label><input name="nombre" class="input-rosa" placeholder="Ej: Agua, botella 0.5L" style="font-size:20px;font-weight:bold" required></div>
 <div class="col-md-6"><label class="label-rosa">CATEGORÍA</label><div style="display:flex;gap:6px"><select name="categoria" id="catSelect" class="select-rosa" style="flex:1">{% for cat in categorias %}<option value="{{cat.nombre}}">{{cat.nombre}}</option>{% endfor %}</select><button type="button" onclick="nuevaCategoria()" style="background:#ff4d8a;color:white;border:none;padding:6px 10px;border-radius:8px;font-size:11px;font-weight:bold">+ NUEVA</button></div></div></div>
-<label class="label-rosa">DESCRIPCIÓN</label><textarea name="descripcion" class="input-rosa" rows="2" placeholder="Descripción opcional"></textarea>
-<div style="margin-top:15px"><input type="checkbox" name="disponible" checked style="accent-color:#ff4d8a"> El artículo está disponible para la venta</div>
 <div class="row" style="margin-top:15px"><div class="col-md-4"><label class="label-rosa">PRECIO MXN *</label><input name="precio" type="number" step="0.01" class="input-rosa" placeholder="0.00" required></div><div class="col-md-4"><label class="label-rosa">EN STOCK</label><input name="en_stock" type="number" class="input-rosa" placeholder="0"></div><div class="col-md-4"><label class="label-rosa">FOTO</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:2px solid #ff4d8a!important"></div></div>
 <button style="background:#ff4d8a;color:white;border:none;padding:12px 30px;border-radius:10px;font-weight:bold;margin-top:20px">💾 GUARDAR ARTÍCULO</button>
 </div>
@@ -586,8 +591,25 @@ def ticket(id):
 
 @app.route('/ventas')
 def ventas():
-    vs=Venta.query.order_by(Venta.id.desc()).limit(100).all()
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div class="card"><h5>Ventas MXN</h5><table class="table table-dark table-sm"><tr><th>Fecha</th><th>Producto</th><th>Total MXN</th><th>Pago</th><th>Vendedor</th></tr>{% for v in vs %}<tr><td>{{v.fecha.strftime('%d/%m %H:%M')}}</td><td>{{v.producto_nombre}} x{{v.cantidad}}</td><td>{{v.total_mxn}}</td><td>{{v.metodo_pago}}</td><td>{{v.vendedor_nombre}}</td></tr>{% endfor %}</table></div></div>""", vs=[{'fecha':v.fecha,'producto_nombre':v.producto_nombre,'cantidad':v.cantidad,'total_mxn':format_mxn(v.total),'metodo_pago':v.metodo_pago,'vendedor_nombre':v.vendedor_nombre} for v in vs])
+    if 'user' not in session: return redirect('/')
+    is_admin=session.get('is_admin')
+    vs=Venta.query.order_by(Venta.id.desc()).limit(200).all()
+    return render_template_string(STYLE_BASE+nav()+"""
+<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h5 style="color:#ff4d8a">🧾 Ventas - MXN (Admin puede eliminar)</h5><span style="color:#888;font-size:11px">Total: {{total_mxn}} - {{vs|length}} tickets</span></div>
+<table class="table table-dark table-sm mt-3" style="font-size:11px"><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Total</th><th>Pago</th><th>Vendedor</th>{% if is_admin %}<th>Acción</th>{% endif %}</tr>
+{% for v in vs %}<tr><td>{{v.id}}</td><td>{{v.fecha.strftime('%d/%m %H:%M')}}</td><td>{{v.cliente}}</td><td>{{v.producto_nombre}} x{{v.cantidad}}</td><td style="color:#25D366;font-weight:bold">{{v.total_mxn}}</td><td>{{v.metodo_pago}}</td><td>{{v.vendedor_nombre}}</td>{% if is_admin %}<td><a href="/ventas/eliminar/{{v.id}}" onclick="return confirm('¿Eliminar ticket #{{v.id}} de {{v.total_mxn}}? Esta acción no se puede deshacer')" style="color:#ff4d8a;font-weight:bold">Eliminar</a></td>{% endif %}</tr>{% endfor %}
+</table></div></div>
+""", vs=[{'id':v.id,'fecha':v.fecha,'cliente':v.cliente,'producto_nombre':v.producto_nombre,'cantidad':v.cantidad,'total_mxn':format_mxn(v.total),'metodo_pago':v.metodo_pago.upper(),'vendedor_nombre':v.vendedor_nombre or v.vendedor} for v in vs], is_admin=is_admin, total_mxn=format_mxn(sum([v.total or 0 for v in vs])))
+
+@app.route('/ventas/eliminar/<int:id>')
+def ventas_eliminar(id):
+    if not session.get('is_admin'):
+        return redirect('/dashboard')
+    v=Venta.query.get(id)
+    if v:
+        db.session.delete(v)
+        db.session.commit()
+    return redirect('/ventas')
 
 @app.route('/admin/usuarios', methods=['GET','POST'])
 def admin_usuarios():
