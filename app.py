@@ -849,14 +849,14 @@ def eliminar_usuario(id):
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
 
-if __name__=='__main__': app.run(host='0.0.0.0', port=int(os.environ.get('PORT',10000)))
-# Fix Render PORT
-import os
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+def logout(): session.clear(); return redirect('/')
 
 @app.route("/ping")
 def ping():
     return "Ruve vivo", 200
+
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
 
