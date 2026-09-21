@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-loyverse-cambio-efectivo'
+app.secret_key = 'ruve-fix-internal-error-migracion'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -99,14 +99,43 @@ def save_upload(file):
         return f"uploads/{filename}"
     return ""
 def get_producto_imagen(p):
-    if p and p.imagen: return f"/static/{p.imagen}"
+    try:
+        if p and p.imagen: return f"/static/{p.imagen}"
+    except: pass
     cfg=get_config(); return f"/static/{cfg.logo_path}"
 def format_mxn(n):
     try: return f"${float(n):,.2f} MXN"
     except: return "$0.00 MXN"
 
+# --- MIGRACION AUTOMATICA PARA EVITAR INTERNAL SERVER ERROR ---
 with app.app_context():
     db.create_all()
+    from sqlalchemy import text
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo FLOAT DEFAULT 0"))
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS ref VARCHAR(50) DEFAULT ''"))
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(100) DEFAULT ''"))
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS vendido_por VARCHAR(20) DEFAULT 'Unidad'"))
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS descripcion TEXT DEFAULT ''"))
+            conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS disponible BOOLEAN DEFAULT TRUE"))
+            conn.commit()
+    except Exception as e:
+        print(f"Migracion: {e}")
+        try:
+            # Para SQLite que no soporta IF NOT EXISTS en algunas versiones
+            with db.engine.connect() as conn:
+                for sql in [
+                    "ALTER TABLE productos ADD COLUMN costo FLOAT DEFAULT 0",
+                    "ALTER TABLE productos ADD COLUMN ref VARCHAR(50) DEFAULT ''",
+                    "ALTER TABLE productos ADD COLUMN codigo_barras VARCHAR(100) DEFAULT ''",
+                    "ALTER TABLE productos ADD COLUMN vendido_por VARCHAR(20) DEFAULT 'Unidad'",
+                ]:
+                    try: conn.execute(text(sql))
+                    except: pass
+                conn.commit()
+        except: pass
+
     if not User.query.filter_by(username='admin').first():
         db.session.add(User(username='admin',nombre_completo='Administrador General',password=generate_password_hash('admin123'),is_admin=True,rol='admin'))
     if Categoria.query.count()==0:
@@ -228,13 +257,24 @@ def dashboard():
     if not is_admin and rol=='mesero' and not cfg.mod_pos_mesero: return redirect('/mesas')
     if not is_admin and rol=='cocina': return redirect('/cocina')
     productos=Producto.query.filter_by(disponible=True).all()
-    for p in productos: p.img_url=get_producto_imagen(p)
+    productos_list=[]
+    for p in productos:
+        try:
+            img=get_producto_imagen(p)
+            precio=p.precio or 0
+        except:
+            img=f"/static/{cfg.logo_path}"
+            precio=0
+        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria','Sin categoria'),'stock':getattr(p,'stock',0),'img_url':img,'precio_mxn':format_mxn(precio)})
     carrito=session.get('carrito',[]); total=sum([x['precio']*x['cant'] for x in carrito])
     mesas_ocupadas=Mesa.query.filter_by(estado='ocupada').all()
     cats=Categoria.query.all()
-    today = datetime.now().date()
-    start = datetime(today.year, today.month, today.day)
-    total_hoy_val = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
+    try:
+        today = datetime.now().date()
+        start = datetime(today.year, today.month, today.day)
+        total_hoy_val = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
+    except:
+        total_hoy_val=0
     return render_template_string(STYLE_BASE+nav()+"""
 <div class="pos-container">
     <div class="pos-left">
@@ -261,7 +301,6 @@ def dashboard():
     <div class="pos-right"><div class="prod-grid">{% for p in productos %}<div class="prod-card" data-cat="{{p.categoria}}" onclick="location='/pos/add/{{p.id}}'"><img src="{{p.img_url}}"><h6>{{p.nombre}}</h6><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small><br><small style="color:#888;font-size:10px">{{p.categoria}} | {{p.stock}}</small></div>{% endfor %}</div></div>
 </div>
 
-<!-- MODAL EFECTIVO ESTILO LOYVERSE -->
 <div id="modalEfectivo" class="modal-efectivo">
     <div class="modal-caja">
         <h5 style="color:var(--rosa);font-weight:bold">💵 Cobrar en Efectivo</h5>
@@ -291,7 +330,6 @@ function filtrar(cat){document.querySelectorAll('.cat-btn').forEach(b=>b.classLi
 document.getElementById('fechaPOS').textContent=new Date().toLocaleString('es-MX',{timeZone:'America/Cancun'});
 function actualizarTotalHoy(){fetch('/api/total_hoy').then(r=>r.json()).then(d=>{document.getElementById('totalHoy').textContent=d.total_mxn;});}
 setInterval(actualizarTotalHoy, 5000);
-
 function abrirEfectivo(){
     if(totalNum<=0){alert('El ticket está vacío');return;}
     document.getElementById('modalTotal').textContent='$'+totalNum.toFixed(2)+' MXN';
@@ -314,14 +352,17 @@ function confirmarEfectivo(){
     location.href='/pos/pagar/efectivo?entregado='+entregado;
 }
 </script>
-""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", total_num=total, mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
+""", productos=productos_list, carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", total_num=total, mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
 
 @app.route('/api/total_hoy')
 def api_total_hoy():
-    today = datetime.now().date()
-    start = datetime(today.year, today.month, today.day)
-    ventas = Venta.query.filter(Venta.fecha>=start).all()
-    total = sum([v.total or 0 for v in ventas])
+    try:
+        today = datetime.now().date()
+        start = datetime(today.year, today.month, today.day)
+        ventas = Venta.query.filter(Venta.fecha>=start).all()
+        total = sum([v.total or 0 for v in ventas])
+    except:
+        total=0
     return jsonify({'total':total,'total_mxn':format_mxn(total)})
 
 @app.route('/pos/add/<int:id>')
@@ -429,7 +470,11 @@ def mesas_view():
 @app.route('/mesa/<int:id>')
 def mesa_detalle(id):
     mesa=Mesa.query.get(id); productos=Producto.query.filter_by(disponible=True).all()
-    for p in productos: p.img_url=get_producto_imagen(p)
+    productos_list=[]
+    for p in productos:
+        try:
+            productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
+        except: continue
     carrito=session.get(f'mesa_carrito_{id}',[]); total_nuevo=sum([x['precio']*x['cant'] for x in carrito]); comandas=[c for c in mesa.comandas if c.estado!='entregado']
     return render_template_string(STYLE_BASE+nav()+"""
 <div style="display:flex;height:calc(100vh - 60px);gap:10px;padding:10px">
@@ -440,7 +485,7 @@ def mesa_detalle(id):
 </div>
 <div style="width:55%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow:auto">{% for p in productos %}<div style="background:white;color:#333;border-radius:8px;padding:6px;text-align:center;cursor:pointer" onclick="location='/mesa/{{mesa.id}}/add/{{p.id}}'"><img src="{{p.img_url}}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"><br><small>{{p.nombre}}</small><br><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small></div>{% endfor %}</div>
 </div>
-""", mesa={'id':mesa.id,'nombre':mesa.nombre,'total_mxn':format_mxn(mesa.total or 0)}, productos=[{'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio),'img_url':p.img_url} for p in productos], carrito=[{'nombre':x['nombre'],'cant':x['cant'],'comentario':x.get('comentario',''),'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], comandas=comandas, total_final_mxn=format_mxn((mesa.total or 0)+total_nuevo))
+""", mesa={'id':mesa.id,'nombre':mesa.nombre,'total_mxn':format_mxn(mesa.total or 0)}, productos=productos_list, carrito=[{'nombre':x['nombre'],'cant':x['cant'],'comentario':x.get('comentario',''),'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], comandas=comandas, total_final_mxn=format_mxn((mesa.total or 0)+total_nuevo))
 
 @app.route('/mesa/<int:mesa_id>/add/<int:prod_id>')
 def mesa_add(mesa_id, prod_id):
@@ -479,7 +524,10 @@ def cocina_view():
     from collections import defaultdict
     grupos=defaultdict(list)
     for c in comandas: grupos[c.mesa_id].append(c)
-    grupos_list=[{'mesa':Mesa.query.get(mid),'comandas':lista} for mid,lista in grupos.items() if Mesa.query.get(mid)]
+    grupos_list=[]
+    for mid,lista in grupos.items():
+        m=Mesa.query.get(mid)
+        if m: grupos_list.append({'mesa':m,'comandas':lista})
     return render_template_string(STYLE_BASE+nav()+"""<div class="container-fluid mt-3"><h3 style="color:#ffcc00">🔥 Cocina - {{grupos_list|length}} mesas</h3><div class="row g-3 mt-2">{% for g in grupos_list %}<div class="col-md-4"><div class="card" style="border-color:#ff4d3a;background:#1a1a0a"><h5 style="color:#00e5ff">🪑 {{g.mesa.nombre}}</h5>{% for c in g.comandas %}<div style="background:white;color:black;padding:6px;border-radius:6px;margin-bottom:5px"><b>{{c.cantidad}}x {{c.producto_nombre}}</b><br>{% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 6px;border-radius:4px;font-size:11px">💬 {{c.comentario}}</span>{% endif %}</div>{% endfor %}<a href="/cocina/mesa_listo/{{g.mesa.id}}" class="btn-rosa w-100 mt-2" style="background:#25D366">✅ MESA LISTA</a></div></div>{% endfor %}{% if not grupos_list %}<div class="col-12 text-center p-4"><h4 style="color:#25D366">Sin pedidos 🟢</h4></div>{% endif %}</div></div><script>setTimeout(()=>location.reload(),15000)</script>""", grupos_list=[{'mesa':{'id':g['mesa'].id,'nombre':g['mesa'].nombre},'comandas':g['comandas']} for g in grupos_list])
 
 @app.route('/cocina/mesa_listo/<int:mesa_id>')
@@ -493,8 +541,12 @@ def cocina_mesa_listo(mesa_id):
 def productos_list():
     if not session.get('is_admin'): return redirect('/dashboard')
     productos=Producto.query.all()
-    for p in productos: p.img_url=get_producto_imagen(p)
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/eliminar/{{p.id}}" style="color:red">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=[{'id':p.id,'nombre':p.nombre,'categoria':p.categoria,'stock':p.stock,'img_url':p.img_url,'precio_mxn':format_mxn(p.precio)} for p in productos])
+    productos_list=[]
+    for p in productos:
+        try:
+            productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))})
+        except: continue
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/eliminar/{{p.id}}" style="color:red">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list)
 
 @app.route('/productos/nuevo', methods=['GET','POST'])
 def productos_nuevo():
@@ -554,7 +606,7 @@ function cargarGrafica(){
     document.getElementById('totalGanancia').innerText='$'+(data.total_ventas-data.total_gastos).toFixed(2)+' MXN';
     let ctx=document.getElementById('graficaVentasGastos').getContext('2d');
     if(chart) chart.destroy();
-    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,[STRIPPED]
+    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.2)',tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.2)',tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
   });
 }
 document.getElementById('formGasto').addEventListener('submit',function(e){e.preventDefault();fetch('/api/gasto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({concepto:document.getElementById('concepto').value,monto:document.getElementById('monto').value})}).then(()=>{document.getElementById('concepto').value='';document.getElementById('monto').value='';cargarGrafica();});});
