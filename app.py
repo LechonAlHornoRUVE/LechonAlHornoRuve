@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from collections import defaultdict
-import os, urllib.parse, io, json
+import os, urllib.parse, io
 
 app = Flask(__name__)
 app.secret_key = 'lechon-ruve-2026-final-fase2'
@@ -21,7 +21,7 @@ class User(db.Model):
     username=db.Column(db.String(80), unique=True)
     password=db.Column(db.String(200))
     is_admin=db.Column(db.Boolean, default=False)
-    rol=db.Column(db.String(20), default="cajero") # admin, cajero, mesero, cocina
+    rol=db.Column(db.String(20), default="cajero")
 
 class Producto(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -46,11 +46,10 @@ class Config(db.Model):
     total_whatsapp=db.Column(db.Boolean, default=True)
     numero_whatsapp=db.Column(db.String(20), default="529831000000")
 
-# --- NUEVO FASE 2 ---
 class Mesa(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     nombre=db.Column(db.String(50))
-    estado=db.Column(db.String(20), default="libre") # libre, ocupada, cuenta
+    estado=db.Column(db.String(20), default="libre")
     total=db.Column(db.Float, default=0)
 
 class Comanda(db.Model):
@@ -58,7 +57,7 @@ class Comanda(db.Model):
     mesa_id=db.Column(db.Integer, db.ForeignKey('mesa.id'))
     producto_nombre=db.Column(db.String(100))
     cantidad=db.Column(db.Integer)
-    estado=db.Column(db.String(20), default="cocina") # cocina, listo, entregado
+    estado=db.Column(db.String(20), default="cocina")
     fecha=db.Column(db.DateTime, default=datetime.utcnow)
     mesero=db.Column(db.String(80))
     mesa = db.relationship('Mesa', backref='comandas')
@@ -68,12 +67,31 @@ def get_config():
     if not c: c=Config(); db.session.add(c); db.session.commit()
     return c
 
+# --- INICIALIZACIÓN QUE NO BORRA FASE 1 ---
 with app.app_context():
+    from sqlalchemy import text
+    # 1. Crear tablas que falten
     db.create_all()
-    if not User.query.filter_by(username='admin').first():
-        db.session.add(User(username='admin', password=generate_password_hash('admin123'), is_admin=True, rol="admin")); db.session.commit()
-    else:
-        u=User.query.filter_by(username='admin').first(); u.is_admin=True; u.rol="admin"; db.session.commit()
+    # 2. PARCHE PARA EL ERROR 502: agregar columna rol si no existe
+    try:
+        db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT \'cajero\''))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Parche rol: {e}")
+    # 3. Crear datos base
+    try:
+        if not User.query.filter_by(username='admin').first():
+            db.session.add(User(username='admin', password=generate_password_hash('admin123'), is_admin=True, rol="admin")); db.session.commit()
+        else:
+            u=User.query.filter_by(username='admin').first()
+            if not hasattr(u, 'rol') or u.rol is None:
+                u.rol="admin"
+            u.is_admin=True
+            db.session.commit()
+    except:
+        db.session.rollback()
+
     get_config()
     if Producto.query.count()==0:
         db.session.add_all([Producto(nombre='Lechón por Kilo', precio=350, stock=50), Producto(nombre='Lechón Entero', precio=3500, stock=5), Producto(nombre='Torta de Lechón', precio=70, stock=30)]); db.session.commit()
@@ -143,16 +161,13 @@ def dashboard():
     for v in ventas: v.msj=make_whats_msg(v)
     return render_template_string(html, productos=productos, ventas=ventas, total_hoy=total_hoy, num_prod=Producto.query.count(), num_ventas=num_ventas, cfg=cfg, is_admin=session.get('is_admin'))
 
-# --- RUTAS FASE 2 MESAS Y COCINA ---
 @app.route('/mesas')
 def mesas_view():
     if 'user' not in session: return redirect('/')
-    if session.get('rol') not in ['admin','cajero','mesero'] and not session.get('is_admin'): return redirect('/dashboard')
     mesas = Mesa.query.all()
-    productos = Producto.query.all()
     return render_template_string(STYLE+nav()+"""
-    <div class="container mt-4"><div class="card"><h4 style="color:#00e5ff">🪑 Control de Mesas</h4><p style="color:#aaa">Verde = Libre, Rojo = Ocupada. Click para tomar pedido.</p>
-    <div class="row g-3 mt-2">{% for m in mesas %}<div class="col-md-3"><div class="{{'mesa-libre' if m.estado=='libre' else 'mesa-ocupada'}}" onclick="window.location='/mesa/{{m.id}}'"><h5>{{m.nombre}}</h5><p style="margin:0">{{m.estado|upper}} {% if m.estado!='libre' %}- ${{m.total}}{% endif %}</p><small>{% if m.estado=='libre' %}Disponible{% else %}{{m.comandas|length}} platillos{% endif %}</small></div></div>{% endfor %}</div></div></div>
+    <div class="container mt-4"><div class="card"><h4 style="color:#00e5ff">🪑 Control de Mesas</h4>
+    <div class="row g-3 mt-2">{% for m in mesas %}<div class="col-md-3"><div class="{{'mesa-libre' if m.estado=='libre' else 'mesa-ocupada'}}" onclick="window.location='/mesa/{{m.id}}'"><h5>{{m.nombre}}</h5><p style="margin:0">{{m.estado|upper}} {% if m.estado!='libre' %}- ${{m.total}}{% endif %}</p><small>{{m.comandas|selectattr('estado','ne','entregado')|list|length}} platillos</small></div></div>{% endfor %}</div></div></div>
     """, mesas=mesas)
 
 @app.route('/mesa/<int:id>', methods=['GET','POST'])
@@ -171,17 +186,15 @@ def mesa_detalle(id):
     <table class="table table-dark mt-3"><tr><th>Producto</th><th>Cant</th><th>Estado</th><th>Mesero</th></tr>
     {% for c in mesa.comandas %}{% if c.estado!='entregado' %}<tr><td>{{c.producto_nombre}}</td><td>{{c.cantidad}}</td><td><span style="color:{% if c.estado=='cocina' %}#ff4d3a{% else %}#25D366{% endif %}">{{c.estado}}</span></td><td>{{c.mesero}}</td></tr>{% endif %}{% endfor %}</table>
     <div class="d-flex gap-2 no-print"><a href="/mesa/{{mesa.id}}/cobrar" class="btn-rosa">💰 COBRAR Y LIBERAR</a><a href="/mesas" class="btn btn-dark">Volver a Mesas</a></div>
-    </div></div><div class="col-md-5"><div class="card"><h5 style="color:#00e5ff">Agregar Platillo (Se envía a cocina)</h5><form method="POST" class="mt-3"><select name="producto_id" class="form-control mb-3" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} ({{p.stock}}) {% if p.stock<=3 %}⚠️{% endif %}</option>{% endfor %}</select><input name="cantidad" type="number" value="1" min="1" class="form-control mb-3" required><button class="btn-rosa w-100">🍽️ MANDAR A COCINA</button></form></div></div></div></div>
+    </div></div><div class="col-md-5"><div class="card"><h5 style="color:#00e5ff">Agregar Platillo (Se envía a cocina)</h5><form method="POST" class="mt-3"><select name="producto_id" class="form-control mb-3" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} ({{p.stock}})</option>{% endfor %}</select><input name="cantidad" type="number" value="1" min="1" class="form-control mb-3" required><button class="btn-rosa w-100">🍽️ MANDAR A COCINA</button></form></div></div></div></div>
     """, mesa=mesa, productos=productos)
 
 @app.route('/mesa/<int:id>/cobrar')
 def mesa_cobrar(id):
     if 'user' not in session: return redirect('/')
     mesa = Mesa.query.get(id)
-    # Generar ventas por cada comanda
     for c in mesa.comandas:
         if c.estado != 'entregado':
-            # Buscar precio
             prod = Producto.query.filter_by(nombre=c.producto_nombre).first()
             precio = prod.precio if prod else 0
             v = Venta(cliente=mesa.nombre, producto_nombre=c.producto_nombre, cantidad=c.cantidad, total=precio*c.cantidad, vendedor=session.get('user'))
@@ -195,7 +208,7 @@ def cocina_view():
     comandas = Comanda.query.filter(Comanda.estado=='cocina').order_by(Comanda.fecha.asc()).all()
     listas = Comanda.query.filter(Comanda.estado=='listo').order_by(Comanda.fecha.desc()).limit(10).all()
     return render_template_string(STYLE+nav()+"""
-    <div class="container mt-4"><div class="card" style="border-color:#ffcc00"><h3 style="color:#ffcc00">🔥 KDS - Cocina ({{comandas|length}} pendientes)</h3><p style="color:#aaa">Aquí solo ve pedidos, no ve cajas ni clientes (como dice tu diagrama).</p>
+    <div class="container mt-4"><div class="card" style="border-color:#ffcc00"><h3 style="color:#ffcc00">🔥 KDS - Cocina ({{comandas|length}} pendientes)</h3>
     <div class="row g-3 mt-2">{% for c in comandas %}<div class="col-md-4"><div class="card" style="background:#1a1a0a;border-color:#ff4d3a"><h5>{{c.mesa.nombre}}</h5><h3 style="color:white">{{c.cantidad}}x {{c.producto_nombre}}</h3><small>Mesero: {{c.mesero}} - {{c.fecha.strftime('%H:%M')}}</small><a href="/cocina/listo/{{c.id}}" class="btn-rosa w-100 mt-3" style="background:#25D366">✅ MARCAR LISTO</a></div></div>{% else %}<div class="col-12 text-center p-4"><h4 style="color:#25D366">Todo al día, no hay pedidos 🟢</h4></div>{% endfor %}</div></div>
     <div class="card mt-4"><h5 style="color:#25D366">✅ Últimos Listos</h5><table class="table table-dark mt-2"><tr><th>Mesa</th><th>Platillo</th><th>Hora</th></tr>{% for c in listas %}<tr><td>{{c.mesa.nombre}}</td><td>{{c.cantidad}}x {{c.producto_nombre}}</td><td>{{c.fecha.strftime('%H:%M')}}</td></tr>{% endfor %}</table></div></div>
     <script>setTimeout(()=>location.reload(), 15000);</script>
@@ -206,8 +219,6 @@ def cocina_listo(id):
     if 'user' not in session: return redirect('/')
     c = Comanda.query.get(id); c.estado='listo'; db.session.commit()
     return redirect('/cocina')
-
-# --- FIN FASE 2 ---
 
 @app.route('/vender', methods=['POST'])
 def vender():
