@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-cloudinary-definitivo'
+app.secret_key = 'ruve-final-fix-imagen-cloudinary'
 
 UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -20,7 +20,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 db = SQLAlchemy(app)
 
-# --- CLOUDINARY CONFIG ---
+# CLOUDINARY CONFIG
 CLOUDINARY_ENABLED = False
 try:
     import cloudinary
@@ -33,9 +33,9 @@ try:
     )
     if os.environ.get('CLOUDINARY_CLOUD_NAME'):
         CLOUDINARY_ENABLED = True
-        print("Cloudinary ACTIVADO - imagenes permanentes")
+        print("Cloudinary ACTIVADO")
 except Exception as e:
-    print(f"Cloudinary no instalado o no configurado: {e}")
+    print(f"Cloudinary no configurado: {e}")
 
 class User(db.Model):
     __tablename__ = 'usuarios'
@@ -56,7 +56,7 @@ class Producto(db.Model):
     precio=db.Column(db.Float, default=0)
     stock=db.Column(db.Integer, default=0)
     costo=db.Column(db.Float, default=0)
-    imagen=db.Column(db.String(500), default="") # Ahora guarda URL larga
+    imagen=db.Column(db.Text, default="")
     descripcion=db.Column(db.Text, default="")
     categoria=db.Column(db.String(50), default="Sin categoria")
     disponible=db.Column(db.Boolean, default=True)
@@ -83,7 +83,7 @@ class Gasto(db.Model):
 class Config(db.Model):
     __tablename__ = 'config'
     id=db.Column(db.Integer, primary_key=True)
-    logo_path=db.Column(db.String(500), default="logo.png")
+    logo_path=db.Column(db.Text, default="logo.png")
     mod_pos_mesero=db.Column(db.Boolean, default=False)
 class Mesa(db.Model):
     __tablename__ = 'mesas'
@@ -115,34 +115,40 @@ def save_upload(file):
     ext = file.filename.rsplit('.',1)[1].lower()
     if ext not in ALLOWED_EXT: return ""
     try:
+        try: file.stream.seek(0)
+        except: pass
         if CLOUDINARY_ENABLED:
-            # Sube a Cloudinary permanente
-            result = cloudinary.uploader.upload(file, folder="ruve_productos", resource_type="image")
-            return result.get('secure_url', '')
+            result = cloudinary.uploader.upload(file, folder="ruve_productos", overwrite=True, resource_type="image")
+            url = result.get('secure_url','')
+            print(f"Subido Cloudinary: {url}")
+            return url
         else:
-            # Fallback local (si no configuraste cloudinary)
             filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{secure_filename(file.filename)}"
             path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(path)
-            if os.path.exists(path):
-                return f"uploads/{filename}"
+            return f"uploads/{filename}" if os.path.exists(path) else ""
     except Exception as e:
-        print(f"Error guardando imagen: {e}")
+        print(f"Error save_upload: {e}")
+        try:
+            try: file.stream.seek(0)
+            except: pass
+            filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{secure_filename(file.filename)}"
+            path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(path)
+            return f"uploads/{filename}" if os.path.exists(path) else ""
+        except: return ""
     return ""
 
 def get_producto_imagen(p):
     try:
-        if p and p.imagen:
-            # Si es URL de Cloudinary, devolver directa
+        if p and p.imagen and len(p.imagen) > 5:
             if p.imagen.startswith('http'):
                 return p.imagen
-            # Si es local, verificar que exista
             full_path = os.path.join(app.root_path, 'static', p.imagen)
             if os.path.exists(full_path):
                 return f"/static/{p.imagen}"
     except: pass
     cfg=get_config()
-    # Logo tambien puede ser de cloudinary
     if cfg.logo_path and cfg.logo_path.startswith('http'):
         return cfg.logo_path
     return f"/static/{cfg.logo_path}"
@@ -156,6 +162,8 @@ with app.app_context():
     from sqlalchemy import text
     try:
         with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE productos ALTER COLUMN imagen TYPE TEXT"))
+            conn.execute(text("ALTER TABLE config ALTER COLUMN logo_path TYPE TEXT"))
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS costo FLOAT DEFAULT 0"))
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS ref VARCHAR(50) DEFAULT ''"))
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(100) DEFAULT ''"))
@@ -163,12 +171,20 @@ with app.app_context():
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS descripcion TEXT DEFAULT ''"))
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS disponible BOOLEAN DEFAULT TRUE"))
             conn.commit()
-    except:
-        pass
+            print("Migracion TEXT OK")
+    except Exception as e:
+        print(f"Migracion: {e}")
+        try:
+            with db.engine.connect() as conn:
+                for sql in ["ALTER TABLE productos ADD COLUMN costo FLOAT DEFAULT 0","ALTER TABLE productos ADD COLUMN ref VARCHAR(50) DEFAULT ''"]:
+                    try: conn.execute(text(sql))
+                    except: pass
+                conn.commit()
+        except: pass
     if not User.query.filter_by(username='admin').first():
         db.session.add(User(username='admin',nombre_completo='Administrador General',password=generate_password_hash('admin123'),is_admin=True,rol='admin'))
     if Categoria.query.count()==0:
-        for cat in ["Sin categoría","Lechón","Tortas","Órdenes","Bebidas","Extras"]:
+        for cat in ["Sin categoría","Lechón","Tortas","Órdenes","Bebidas","Extras","Comida"]:
             if not Categoria.query.filter_by(nombre=cat).first():
                 db.session.add(Categoria(nombre=cat))
     if Mesa.query.count()==0:
@@ -223,29 +239,9 @@ body{background:#000;color:white;font-family:Arial;margin:0}
 """
 
 def nav():
-    cfg=get_config(); rol=session.get('rol','cajero'); is_admin=session.get('is_admin', False); nombre=session.get('nombre_completo') or session.get('user','')
-    logo_url=get_producto_imagen(cfg) if hasattr(cfg, 'logo_path') else f"/static/{cfg.logo_path}"
-    # Para nav si logo es url cloudinary usar directo
-    if cfg.logo_path and cfg.logo_path.startswith('http'):
-        logo_url=cfg.logo_path
-    else:
-        logo_url=f"/static/{cfg.logo_path}" if not cfg.logo_path.startswith('http') else cfg.logo_path
-        try:
-            full = os.path.join(app.root_path, 'static', cfg.logo_path)
-            if not os.path.exists(full):
-                logo_url = f"/static/{cfg.logo_path}" # fallback
-        except: pass
-    # fix logo url final
-    logo_url = get_producto_imagen(cfg) if not cfg.logo_path.startswith('http') or True else cfg.logo_path
-    # simplificar
-    try:
-        if cfg.logo_path.startswith('http'):
-            logo_url = cfg.logo_path
-        else:
-            logo_url = get_producto_imagen(cfg)
-    except:
-        logo_url = f"/static/{cfg.logo_path}"
-
+    cfg=get_config()
+    logo_url=get_producto_imagen(cfg)
+    rol=session.get('rol','cajero'); is_admin=session.get('is_admin', False); nombre=session.get('nombre_completo') or session.get('user','')
     if not is_admin and rol=='cocina':
         return f'<nav class="navbar"><div class="d-flex align-items-center"><img src="{logo_url}" style="width:40px;height:40px;border-radius:50%;background:white;padding:3px;object-fit:cover"><h6 class="m-0 ms-2" style="color:#ffcc00">Cocina {nombre}</h6></div><div><a href="/cocina" class="me-3">🔥 Cocina</a><a href="/logout">Salir</a></div></nav>'
     links=""
@@ -260,8 +256,7 @@ def nav():
 
 @app.route('/', methods=['GET','POST'])
 def login():
-    cfg=get_config()
-    error=None
+    cfg=get_config(); error=None
     if request.method=='POST':
         u=User.query.filter_by(username=request.form['username']).first()
         if u and check_password_hash(u.password, request.form['password']):
@@ -269,13 +264,12 @@ def login():
             if u.rol=='cocina' and not u.is_admin: return redirect('/cocina')
             if u.rol=='mesero' and not u.is_admin: return redirect('/mesas')
             return redirect('/dashboard')
-        else:
-            error="Usuario o contraseña incorrectos"
-    logo_url = get_producto_imagen(cfg)
+        else: error="Usuario o contraseña incorrectos"
+    logo_url=get_producto_imagen(cfg)
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
     <div class="card" style="width:100%;max-width:380px;text-align:center;padding:30px 25px">
-        <div style="display:flex;justify-content:center;margin-bottom:15px"><img src="{logo_url}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid var(--rosa);display:block;margin:0 auto"></div>
+        <div style="display:flex;justify-content:center;margin-bottom:15px"><img src="{logo_url}" style="width:130px;height:130px;object-fit:cover;border-radius:50%;background:white;padding:5px;border:3px solid var(--rosa)"></div>
         <h3 style="color:var(--rosa);font-weight:bold;margin:10px 0 20px 0">Ruve</h3>
         {"<div style='background:#2a1018;border:1px solid var(--rosa);color:var(--rosa);padding:8px;border-radius:8px;font-size:12px;margin-bottom:10px'>"+error+"</div>" if error else ""}
         <form method="POST" style="text-align:left"><input name="username" class="form-control mb-3" placeholder="Usuario" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required style="background:white!important;color:#333!important;padding:12px;border-radius:8px"><button class="btn-rosa w-100" style="padding:12px;font-size:15px;border-radius:10px">Entrar</button></form>
@@ -294,7 +288,7 @@ def restablecer():
         elif nueva!=confirmar: error="Las contraseñas no coinciden"
         elif len(nueva)<4: error="Mínimo 4 caracteres"
         else: u.password=generate_password_hash(nueva); db.session.commit(); msg=f"Contraseña de {u.nombre_completo} restablecida."
-    logo_url = get_producto_imagen(cfg)
+    logo_url=get_producto_imagen(cfg)
     return render_template_string(STYLE_BASE+f"""
 <div style="min-height:100vh;display:flex;justify-content:center;align-items:center;background:#000;padding:20px">
     <div class="card" style="width:100%;max-width:400px;text-align:center;padding:25px"><div style="display:flex;justify-content:center;margin-bottom:10px"><img src="{logo_url}" style="width:90px;height:90px;border-radius:50%;background:white;padding:4px;border:2px solid var(--rosa)"></div><h5 style="color:var(--rosa);font-weight:bold">Restablecer Contraseña</h5>
@@ -309,18 +303,14 @@ def dashboard():
     if not is_admin and rol=='mesero' and not cfg.mod_pos_mesero: return redirect('/mesas')
     if not is_admin and rol=='cocina': return redirect('/cocina')
     productos=Producto.query.filter_by(disponible=True).all()
-    productos_list=[]
-    for p in productos:
-        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria','Sin categoria'),'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(p.precio or 0)})
+    productos_list=[{'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria','Sin categoria'),'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(p.precio or 0)} for p in productos]
     carrito=session.get('carrito',[]); total=sum([x['precio']*x['cant'] for x in carrito])
     mesas_ocupadas=Mesa.query.filter_by(estado='ocupada').all()
     cats=Categoria.query.all()
     try:
-        today = datetime.now().date()
-        start = datetime(today.year, today.month, today.day)
+        today = datetime.now().date(); start = datetime(today.year, today.month, today.day)
         total_hoy_val = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
-    except:
-        total_hoy_val=0
+    except: total_hoy_val=0
     return render_template_string(STYLE_BASE+nav()+"""
 <div class="pos-container">
     <div class="pos-left">
@@ -378,12 +368,9 @@ function confirmarEfectivo(){let entregado=parseFloat(document.getElementById('c
 @app.route('/api/total_hoy')
 def api_total_hoy():
     try:
-        today = datetime.now().date()
-        start = datetime(today.year, today.month, today.day)
-        ventas = Venta.query.filter(Venta.fecha>=start).all()
-        total = sum([v.total or 0 for v in ventas])
-    except:
-        total=0
+        today = datetime.now().date(); start = datetime(today.year, today.month, today.day)
+        total = sum([v.total or 0 for v in Venta.query.filter(Venta.fecha>=start).all()])
+    except: total=0
     return jsonify({'total':total,'total_mxn':format_mxn(total)})
 
 @app.route('/pos/add/<int:id>')
@@ -401,8 +388,7 @@ def pos_pagar_direct(metodo):
     if not carrito: return redirect('/dashboard')
     vendedor=session.get('user'); vendedor_nombre=session.get('nombre_completo','')
     entregado = request.args.get('entregado', type=float)
-    last_id=None
-    total_ticket=0
+    last_id=None; total_ticket=0
     for it in carrito: total_ticket+=it['precio']*it['cant']
     for it in carrito:
         prod=Producto.query.get(it['id'])
@@ -421,14 +407,13 @@ def admin_categorias():
     if not session.get('is_admin'): return redirect('/dashboard')
     cats=Categoria.query.all()
     return render_template_string(STYLE_BASE+nav()+"""
-<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between"><h5 style="color:var(--rosa)">🏷️ Categorías - Editar y Eliminar</h5><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:12px">+ Crear artículo</a></div>
+<div class="container mt-3"><div class="card"><div style="display:flex;justify-content:space-between"><h5 style="color:var(--rosa)">🏷️ Categorías</h5><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:12px">+ Crear artículo</a></div>
 <table class="table table-dark table-sm mt-3" style="font-size:13px"><tr><th>ID</th><th>Nombre</th><th>Acciones</th></tr>
-{% for c in cats %}<tr><td>{{c.id}}</td><td>{{c.nombre}}</td><td><a href="/admin/categorias/editar/{{c.id}}" style="color:#00e5ff;margin-right:10px">Editar</a><a href="/admin/categorias/eliminar/{{c.id}}" onclick="return confirm('¿Eliminar categoría {{c.nombre}}?')" style="color:var(--rosa)">Eliminar</a></td></tr>{% endfor %}
+{% for c in cats %}<tr><td>{{c.id}}</td><td>{{c.nombre}}</td><td><a href="/admin/categorias/editar/{{c.id}}" style="color:#00e5ff;margin-right:10px">Editar</a><a href="/admin/categorias/eliminar/{{c.id}}" onclick="return confirm('¿Eliminar {{c.nombre}}?')" style="color:var(--rosa)">Eliminar</a></td></tr>{% endfor %}
 </table>
 <form method="POST" action="/admin/categorias/crear" class="d-flex gap-2 mt-3"><input name="nombre" class="form-control" placeholder="Nueva categoría" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa">Agregar</button></form>
 </div></div>
 """, cats=cats)
-
 @app.route('/admin/categorias/crear', methods=['POST'])
 def admin_categorias_crear():
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -443,15 +428,11 @@ def admin_categorias_editar(id):
     if request.method=='POST':
         nuevo=request.form.get('nombre','').strip()
         if nuevo:
-            old_name=cat.nombre; cat.nombre=nuevo
-            for p in Producto.query.filter_by(categoria=old_name).all(): p.categoria=nuevo
+            old=cat.nombre; cat.nombre=nuevo
+            for p in Producto.query.filter_by(categoria=old).all(): p.categoria=nuevo
             db.session.commit()
         return redirect('/admin/categorias')
-    return render_template_string(STYLE_BASE+nav()+f"""
-<div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:var(--rosa)">Editar Categoría</h5>
-<form method="POST" class="mt-3"><label class="label-rosa">Nombre</label><input name="nombre" class="form-control mb-3" value="{cat.nombre}" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa w-100">Guardar</button></form>
-<a href="/admin/categorias" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a></div></div>
-""")
+    return render_template_string(STYLE_BASE+nav()+f"""<div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:var(--rosa)">Editar Categoría</h5><form method="POST" class="mt-3"><label class="label-rosa">Nombre</label><input name="nombre" class="form-control mb-3" value="{cat.nombre}" required style="background:#000!important;border:1.5px solid var(--rosa)!important"><button class="btn-rosa w-100">Guardar</button></form><a href="/admin/categorias" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a></div></div>""")
 @app.route('/admin/categorias/eliminar/<int:id>')
 def admin_categorias_eliminar(id):
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -475,7 +456,6 @@ def admin_mesas():
 {% for m in mesas %}<div style="background:#111;border:2px solid {% if m.estado=='ocupada' %}var(--rosa){% else %}#333{% endif %};border-radius:10px;padding:12px;text-align:center"><b>{{m.nombre}}</b><br><small>{{m.estado}} - {{m.total_mxn}}</small><br>{% if m.estado=='libre' %}<a href="/admin/mesas/eliminar/{{m.id}}" onclick="return confirm('¿Eliminar {{m.nombre}}?')" style="color:var(--rosa);font-size:12px">Eliminar</a>{% else %}<small style="color:#888">Ocupada</small>{% endif %}</div>{% endfor %}
 </div></div></div>
 """, mesas=[{'id':m.id,'nombre':m.nombre,'estado':m.estado,'total_mxn':format_mxn(m.total or 0)} for m in mesas])
-
 @app.route('/admin/mesas/eliminar/<int:id>')
 def admin_mesas_eliminar(id):
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -491,9 +471,7 @@ def mesas_view():
 @app.route('/mesa/<int:id>')
 def mesa_detalle(id):
     mesa=Mesa.query.get(id); productos=Producto.query.filter_by(disponible=True).all()
-    productos_list=[]
-    for p in productos:
-        productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
+    productos_list=[{'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)} for p in productos]
     carrito=session.get(f'mesa_carrito_{id}',[]); total_nuevo=sum([x['precio']*x['cant'] for x in carrito]); comandas=[c for c in mesa.comandas if c.estado!='entregado']
     return render_template_string(STYLE_BASE+nav()+"""
 <div style="display:flex;height:calc(100vh - 60px);gap:10px;padding:10px">
@@ -503,7 +481,7 @@ def mesa_detalle(id):
 {% for c in comandas %}
 <div style="background:white;color:black;padding:8px;border-radius:8px;margin-bottom:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
 <div><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}<br><small style="color:#888">{{c.estado}} - {{c.fecha.strftime('%H:%M')}} - {{c.mesero_nombre}}</small></div>
-<a href="/mesa/{{mesa.id}}/comanda/eliminar/{{c.id}}" onclick="return confirm('¿Quitar {{c.producto_nombre}} del pedido?')" style="background:var(--rosa);color:white;padding:6px 10px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:12px">✕ Quitar</a>
+<a href="/mesa/{{mesa.id}}/comanda/eliminar/{{c.id}}" onclick="return confirm('¿Quitar {{c.producto_nombre}}?')" style="background:var(--rosa);color:white;padding:6px 10px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:12px">✕ Quitar</a>
 </div>
 {% endfor %}
 {% if not comandas %}<p style="color:#888;font-size:12px;text-align:center;margin-top:10px">Sin productos en cocina</p>{% endif %}
@@ -578,7 +556,6 @@ def cocina_view():
         m=Mesa.query.get(mid)
         if m: grupos_list.append({'mesa':m,'comandas':lista})
     return render_template_string(STYLE_BASE+nav()+"""<div class="container-fluid mt-3"><h3 style="color:#ffcc00">🔥 Cocina - {{grupos_list|length}} mesas</h3><div class="row g-3 mt-2">{% for g in grupos_list %}<div class="col-md-4"><div class="card" style="border-color:#ff4d3a;background:#1a1a0a"><h5 style="color:#00e5ff">🪑 {{g.mesa.nombre}}</h5>{% for c in g.comandas %}<div style="background:white;color:black;padding:6px;border-radius:6px;margin-bottom:5px"><b>{{c.cantidad}}x {{c.producto_nombre}}</b><br>{% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 6px;border-radius:4px;font-size:11px">💬 {{c.comentario}}</span>{% endif %}</div>{% endfor %}<a href="/cocina/mesa_listo/{{g.mesa.id}}" class="btn-rosa w-100 mt-2" style="background:#25D366">✅ MESA LISTA</a></div></div>{% endfor %}{% if not grupos_list %}<div class="col-12 text-center p-4"><h4 style="color:#25D366">Sin pedidos 🟢</h4></div>{% endif %}</div></div><script>setTimeout(()=>location.reload(),15000)</script>""", grupos_list=[{'mesa':{'id':g['mesa'].id,'nombre':g['mesa'].nombre},'comandas':g['comandas']} for g in grupos_list])
-
 @app.route('/cocina/mesa_listo/<int:mesa_id>')
 def cocina_mesa_listo(mesa_id):
     mesa=Mesa.query.get(mesa_id)
@@ -590,10 +567,8 @@ def cocina_mesa_listo(mesa_id):
 def productos_list():
     if not session.get('is_admin'): return redirect('/dashboard')
     productos=Producto.query.all()
-    productos_list=[]
-    for p in productos:
-        productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))})
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}}) {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Cloudinary Activo</small>{% endif %}</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th>Acciones</th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/editar/{{p.id}}" style="color:#00e5ff;margin-right:10px;font-weight:bold">Editar</a><a href="/productos/eliminar/{{p.id}}" onclick="return confirm('¿Borrar {{p.nombre}}?')" style="color:var(--rosa);font-weight:bold">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list, cloudinary_enabled=CLOUDINARY_ENABLED)
+    productos_list=[{'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))} for p in productos]
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}}) {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Cloudinary Activo</small>{% endif %}</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th>Acciones</th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px;background:white;padding:2px;border:1px solid #eee"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/editar/{{p.id}}" style="color:#00e5ff;margin-right:10px;font-weight:bold">Editar</a><a href="/productos/eliminar/{{p.id}}" onclick="return confirm('¿Borrar {{p.nombre}}?')" style="color:var(--rosa);font-weight:bold">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/productos/nuevo', methods=['GET','POST'])
 def productos_nuevo():
@@ -612,7 +587,7 @@ def productos_nuevo():
             <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" checked style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
             <div class="row" style="margin-top:20px"><div class="col-md-6"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" placeholder="10,00" required></div><div class="col-md-6"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" placeholder="5,00"></div></div>
             <div class="row" style="margin-top:15px"><div class="col-md-4"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-4"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="0"></div></div>
-            <div style="margin-top:20px"><label class="crear-label">Foto {% if cloudinary_enabled %}<span style="color:#25D366">(Se guardará permanente en la nube ☁️)</span>{% else %}(visible para TODOS){% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto {% if cloudinary_enabled %}<span style="color:#25D366">(Permanente en la nube ☁️)</span>{% else %}(visible para TODOS){% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR ARTÍCULO</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
 <script>function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}</script>
 """, categorias=categorias, cloudinary_enabled=CLOUDINARY_ENABLED)
@@ -626,7 +601,8 @@ def productos_editar(id):
     if request.method=='POST':
         if 'imagen' in request.files and request.files['imagen'].filename:
             nueva = save_upload(request.files['imagen'])
-            if nueva: p.imagen = nueva
+            if nueva and len(nueva) > 5:
+                p.imagen = nueva
         p.nombre = request.form.get('nombre','').strip() or p.nombre
         p.descripcion = request.form.get('descripcion','')
         p.categoria = request.form.get('categoria','Sin categoria')
@@ -650,7 +626,7 @@ def productos_editar(id):
             <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" {{'checked' if p.vendido_por=='Unidad' else ''}} style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" {{'checked' if p.vendido_por!='Unidad' else ''}} style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
             <div class="row" style="margin-top:20px"><div class="col-md-4"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" value="{{p.precio}}"></div><div class="col-md-4"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" value="{{p.costo}}"></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="{{p.stock}}"></div></div>
             <div class="row" style="margin-top:15px"><div class="col-md-6"><label class="crear-label">REF</label><input name="ref" class="crear-input" value="{{p.ref}}"></div><div class="col-md-6"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" value="{{p.codigo_barras}}"></div></div>
-            <div style="margin-top:20px"><label class="crear-label">Foto actual: <img src="{{p.img_url}}" style="width:50px;height:50px;object-fit:cover;border-radius:6px;background:white;padding:2px"></label><br><label class="crear-label">Cambiar foto (opcional - deja vacío para conservar) {% if cloudinary_enabled %}<span style="color:#25D366">☁️ Se guardará permanente</span>{% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto actual: <img src="{{p.img_url}}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;background:white;padding:3px;border:1px solid var(--rosa)"></label><br><label class="crear-label">Cambiar foto (opcional - deja vacío para conservar) {% if cloudinary_enabled %}<span style="color:#25D366">☁️ Se guardará permanente</span>{% endif %}</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR CAMBIOS</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
 """, p={'id':p.id,'nombre':p.nombre,'descripcion':p.descripcion or '', 'categoria':p.categoria, 'disponible':p.disponible, 'vendido_por':p.vendido_por or 'Unidad', 'precio':p.precio or 0, 'costo':p.costo or 0, 'stock':p.stock or 0, 'ref':p.ref or '', 'codigo_barras':p.codigo_barras or '', 'img_url':get_producto_imagen(p)}, categorias=categorias, cloudinary_enabled=CLOUDINARY_ENABLED)
 
@@ -661,7 +637,6 @@ def api_categorias_crear():
     if nombre and not Categoria.query.filter_by(nombre=nombre).first():
         db.session.add(Categoria(nombre=nombre)); db.session.commit(); return jsonify({'ok':True,'nombre':nombre})
     return jsonify({'ok':False})
-
 @app.route('/productos/eliminar/<int:id>')
 def eliminar_producto(id):
     p=Producto.query.get(id)
@@ -695,7 +670,6 @@ document.getElementById('formGasto').addEventListener('submit',function(e){e.pre
 cargarGrafica();
 </script>
 """)
-
 @app.route('/api/ventas_gastos')
 def api_ventas_gastos():
     periodo=request.args.get('periodo','mes'); labels=[]; ventas_data=[]; gastos_data=[]; now=datetime.now()
@@ -720,7 +694,6 @@ def api_ventas_gastos():
             g=sum([x.monto or 0 for x in Gasto.query.filter(Gasto.fecha>=start,Gasto.fecha<end).all()])
             labels.append(start.strftime("%b %Y")); ventas_data.append(v); gastos_data.append(g)
     return jsonify({'labels':labels,'ventas':ventas_data,'gastos':gastos_data,'total_ventas':sum(ventas_data),'total_gastos':sum(gastos_data)})
-
 @app.route('/api/gasto', methods=['POST'])
 def api_gasto():
     data=request.get_json()
@@ -737,8 +710,8 @@ def admin_config():
             if nl: cfg.logo_path=nl
         cfg.mod_pos_mesero='mod_pos_mesero' in request.form
         db.session.commit(); return redirect('/admin/config')
-    logo_url = get_producto_imagen(cfg)
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Permanente</small>{% endif %}</h4><div class="text-center" style="display:flex;justify-content:center"><img src="{{logo_url}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid var(--rosa);display:block;margin:0 auto"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg, logo_url=logo_url, cloudinary_enabled=CLOUDINARY_ENABLED)
+    logo_url=get_producto_imagen(cfg)
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4>⚙️ Config + Logo {% if cloudinary_enabled %}<small style="background:#25D366;color:white;padding:3px 8px;border-radius:10px;font-size:10px">☁️ Permanente</small>{% endif %}</h4><div class="text-center" style="display:flex;justify-content:center"><img src="{{logo_url}}" style="width:100px;height:100px;border-radius:50%;background:white;padding:5px;object-fit:cover;border:2px solid var(--rosa)"></div><form method="POST" enctype="multipart/form-data" class="mt-3"><label>Cambiar logo</label><input name="logo" type="file" class="form-control mb-2" accept="image/*"><label><input type="checkbox" name="mod_pos_mesero" {{'checked' if cfg.mod_pos_mesero}}> POS para mesero habilitado</label><br><button class="btn-rosa w-100 mt-2">Guardar</button></form></div></div>""", cfg=cfg, logo_url=logo_url, cloudinary_enabled=CLOUDINARY_ENABLED)
 
 @app.route('/ticket/<int:id>')
 def ticket(id):
@@ -790,13 +763,12 @@ def admin_usuarios():
         return redirect('/admin/usuarios')
     usuarios=User.query.all()
     return render_template_string(STYLE_BASE+nav()+"""
-<div class="container mt-3"><div class="card"><h5>👥 Usuarios - Editar y Restablecer</h5>
+<div class="container mt-3"><div class="card"><h5>👥 Usuarios</h5>
 <form method="POST" class="row g-2"><div class="col-md-3"><input name="nombre_completo" class="form-control" placeholder="Nombre completo *" required></div><div class="col-md-2"><input name="username" class="form-control" placeholder="Usuario *" required></div><div class="col-md-2"><input name="password" type="password" class="form-control" placeholder="Contraseña *" required></div><div class="col-md-2"><select name="rol" class="form-control"><option value="cajero">Cajero</option><option value="mesero">Mesero</option><option value="cocina">Cocina</option></select></div><div class="col-md-1"><label><input type="checkbox" name="is_admin"> Admin</label></div><div class="col-md-2"><button class="btn-rosa w-100">Crear</button></div></form>
 <table class="table table-dark mt-3"><tr><th>Nombre Completo</th><th>Usuario</th><th>Rol</th><th>Acciones</th></tr>
 {% for u in usuarios %}<tr><td>{{u.nombre_completo}}</td><td>{{u.username}}</td><td>{% if u.is_admin %}ADMIN{% else %}{{u.rol}}{% endif %}</td><td><a href="/admin/usuarios/editar/{{u.id}}" style="color:#00e5ff;font-size:12px;margin-right:8px">Editar</a><a href="/admin/usuarios/reset/{{u.id}}" style="color:#ffcc00;font-size:12px;margin-right:8px">Reset</a><a href="/admin/usuarios/eliminar/{{u.id}}" onclick="return confirm('Eliminar {{u.username}}?')" style="color:var(--rosa);font-size:12px">Eliminar</a></td></tr>{% endfor %}
 </table></div></div>
 """, usuarios=usuarios)
-
 @app.route('/admin/usuarios/editar/<int:id>', methods=['GET','POST'])
 def admin_usuarios_editar(id):
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -815,7 +787,6 @@ def admin_usuarios_editar(id):
 <div class="container mt-3"><div class="card" style="max-width:500px;margin:0 auto"><h5 style="color:var(--rosa)">Editar Usuario - {u.username}</h5>
 <form method="POST" class="mt-3"><label class="label-rosa">Nombre completo</label><input name="nombre_completo" class="form-control mb-2" value="{u.nombre_completo}" required><label class="label-rosa">Usuario</label><input name="username" class="form-control mb-2" value="{u.username}" required><label class="label-rosa">Rol</label><select name="rol" class="form-control mb-2"><option value="cajero" {"selected" if u.rol=="cajero" else ""}>Cajero</option><option value="mesero" {"selected" if u.rol=="mesero" else ""}>Mesero</option><option value="cocina" {"selected" if u.rol=="cocina" else ""}>Cocina</option></select><label><input type="checkbox" name="is_admin" {"checked" if u.is_admin else ""}> Es Administrador</label><label class="label-rosa">Nueva Contraseña (dejar en blanco para no cambiar)</label><input name="password" type="password" class="form-control mb-3" placeholder="Nueva contraseña"><button class="btn-rosa w-100">Guardar Cambios</button></form><a href="/admin/usuarios" style="display:block;text-align:center;margin-top:10px;color:#888">← Volver</a></div></div>
 """)
-
 @app.route('/admin/usuarios/reset/<int:id>', methods=['GET','POST'])
 def admin_usuarios_reset(id):
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -824,18 +795,13 @@ def admin_usuarios_reset(id):
         nueva=request.form.get('nueva','').strip(); confirmar=request.form.get('confirmar','').strip()
         if nueva==confirmar and len(nueva)>=4:
             u.password=generate_password_hash(nueva); db.session.commit(); return redirect('/admin/usuarios')
-    return render_template_string(STYLE_BASE+nav()+f"""
-<div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:#ffcc00">Reset Contraseña - {u.nombre_completo}</h5>
-<form method="POST"><label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required><label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required><button class="btn-rosa w-100" style="background:#ffcc00;color:black">Restablecer</button></form></div></div>
-""")
-
+    return render_template_string(STYLE_BASE+nav()+f"""<div class="container mt-3"><div class="card" style="max-width:400px;margin:0 auto"><h5 style="color:#ffcc00">Reset Contraseña - {u.nombre_completo}</h5><form method="POST"><label class="label-rosa">Nueva Contraseña</label><input name="nueva" type="password" class="form-control mb-2" required><label class="label-rosa">Confirmar</label><input name="confirmar" type="password" class="form-control mb-3" required><button class="btn-rosa w-100" style="background:#ffcc00;color:black">Restablecer</button></form></div></div>""")
 @app.route('/admin/usuarios/eliminar/<int:id>')
 def admin_usuarios_eliminar(id):
     if not session.get('is_admin'): return redirect('/dashboard')
     u=User.query.get(id)
     if u and u.username!='admin': db.session.delete(u); db.session.commit()
     return redirect('/admin/usuarios')
-
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
 
