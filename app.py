@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-fix-internal-error-migracion'
+app.secret_key = 'ruve-final-editar-articulo-completo'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -107,7 +107,6 @@ def format_mxn(n):
     try: return f"${float(n):,.2f} MXN"
     except: return "$0.00 MXN"
 
-# --- MIGRACION AUTOMATICA PARA EVITAR INTERNAL SERVER ERROR ---
 with app.app_context():
     db.create_all()
     from sqlalchemy import text
@@ -120,22 +119,14 @@ with app.app_context():
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS descripcion TEXT DEFAULT ''"))
             conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS disponible BOOLEAN DEFAULT TRUE"))
             conn.commit()
-    except Exception as e:
-        print(f"Migracion: {e}")
+    except:
         try:
-            # Para SQLite que no soporta IF NOT EXISTS en algunas versiones
             with db.engine.connect() as conn:
-                for sql in [
-                    "ALTER TABLE productos ADD COLUMN costo FLOAT DEFAULT 0",
-                    "ALTER TABLE productos ADD COLUMN ref VARCHAR(50) DEFAULT ''",
-                    "ALTER TABLE productos ADD COLUMN codigo_barras VARCHAR(100) DEFAULT ''",
-                    "ALTER TABLE productos ADD COLUMN vendido_por VARCHAR(20) DEFAULT 'Unidad'",
-                ]:
+                for sql in ["ALTER TABLE productos ADD COLUMN costo FLOAT DEFAULT 0","ALTER TABLE productos ADD COLUMN ref VARCHAR(50) DEFAULT ''","ALTER TABLE productos ADD COLUMN codigo_barras VARCHAR(100) DEFAULT ''","ALTER TABLE productos ADD COLUMN vendido_por VARCHAR(20) DEFAULT 'Unidad'"]:
                     try: conn.execute(text(sql))
                     except: pass
                 conn.commit()
         except: pass
-
     if not User.query.filter_by(username='admin').first():
         db.session.add(User(username='admin',nombre_completo='Administrador General',password=generate_password_hash('admin123'),is_admin=True,rol='admin'))
     if Categoria.query.count()==0:
@@ -300,13 +291,10 @@ def dashboard():
     <div class="pos-center"><button class="cat-btn active" onclick="filtrar('todos')" id="btn-todos">Todos</button>{% for cat in cats %}<button class="cat-btn" onclick="filtrar('{{cat.nombre}}')" id="btn-{{cat.nombre}}">{{cat.nombre}}</button>{% endfor %}</div>
     <div class="pos-right"><div class="prod-grid">{% for p in productos %}<div class="prod-card" data-cat="{{p.categoria}}" onclick="location='/pos/add/{{p.id}}'"><img src="{{p.img_url}}"><h6>{{p.nombre}}</h6><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small><br><small style="color:#888;font-size:10px">{{p.categoria}} | {{p.stock}}</small></div>{% endfor %}</div></div>
 </div>
-
 <div id="modalEfectivo" class="modal-efectivo">
     <div class="modal-caja">
         <h5 style="color:var(--rosa);font-weight:bold">💵 Cobrar en Efectivo</h5>
-        <div style="background:#0a0a0a;border:1px solid #333;border-radius:10px;padding:12px;margin:15px 0">
-            <div style="display:flex;justify-content:space-between;font-size:14px"><span>Total a pagar:</span><b id="modalTotal" style="color:var(--rosa)">$0 MXN</b></div>
-        </div>
+        <div style="background:#0a0a0a;border:1px solid #333;border-radius:10px;padding:12px;margin:15px 0"><div style="display:flex;justify-content:space-between;font-size:14px"><span>Total a pagar:</span><b id="modalTotal" style="color:var(--rosa)">$0 MXN</b></div></div>
         <label class="label-rosa" style="text-align:left">Cantidad que da el cliente *</label>
         <input id="cantidadEntregada" type="number" step="0.01" inputmode="decimal" class="form-control" placeholder="Ej: 500" style="background:#000!important;border:2px solid var(--rosa)!important;color:white!important;font-size:22px;font-weight:bold;text-align:center;padding:12px" oninput="calcularCambio()">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px">
@@ -314,43 +302,21 @@ def dashboard():
             <button onclick="setEntregado(200)" style="background:#222;color:white;border:1px solid #444;padding:8px;border-radius:6px;font-size:12px">$200</button>
             <button onclick="setEntregado(500)" style="background:#222;color:white;border:1px solid #444;padding:8px;border-radius:6px;font-size:12px">$500</button>
         </div>
-        <div style="background:#0a1a0f;border:2px solid #25D366;border-radius:10px;padding:12px;margin-top:15px">
-            <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#888;font-size:13px">Cambio a devolver:</span><b id="modalCambio" style="color:#25D366;font-size:22px">$0.00 MXN</b></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px">
-            <button onclick="cerrarEfectivo()" style="background:#333;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cancelar</button>
-            <button onclick="confirmarEfectivo()" style="background:#25D366;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cobrar</button>
-        </div>
+        <div style="background:#0a1a0f;border:2px solid #25D366;border-radius:10px;padding:12px;margin-top:15px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#888;font-size:13px">Cambio a devolver:</span><b id="modalCambio" style="color:#25D366;font-size:22px">$0.00 MXN</b></div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px"><button onclick="cerrarEfectivo()" style="background:#333;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cancelar</button><button onclick="confirmarEfectivo()" style="background:#25D366;color:white;border:none;padding:12px;border-radius:8px;font-weight:bold">Cobrar</button></div>
     </div>
 </div>
-
 <script>
 let totalNum = parseFloat(document.getElementById('totalTicket').dataset.total || 0);
 function filtrar(cat){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));let btn=document.getElementById('btn-'+cat); if(btn) btn.classList.add('active');document.querySelectorAll('.prod-card').forEach(c=>{if(cat=='todos'||c.dataset.cat==cat)c.style.display='block';else c.style.display='none';})}
 document.getElementById('fechaPOS').textContent=new Date().toLocaleString('es-MX',{timeZone:'America/Cancun'});
 function actualizarTotalHoy(){fetch('/api/total_hoy').then(r=>r.json()).then(d=>{document.getElementById('totalHoy').textContent=d.total_mxn;});}
 setInterval(actualizarTotalHoy, 5000);
-function abrirEfectivo(){
-    if(totalNum<=0){alert('El ticket está vacío');return;}
-    document.getElementById('modalTotal').textContent='$'+totalNum.toFixed(2)+' MXN';
-    document.getElementById('cantidadEntregada').value=totalNum.toFixed(2);
-    calcularCambio();
-    document.getElementById('modalEfectivo').classList.add('show');
-    setTimeout(()=>document.getElementById('cantidadEntregada').select(),100);
-}
+function abrirEfectivo(){if(totalNum<=0){alert('El ticket está vacío');return;}document.getElementById('modalTotal').textContent='$'+totalNum.toFixed(2)+' MXN';document.getElementById('cantidadEntregada').value=totalNum.toFixed(2);calcularCambio();document.getElementById('modalEfectivo').classList.add('show');setTimeout(()=>document.getElementById('cantidadEntregada').select(),100);}
 function cerrarEfectivo(){document.getElementById('modalEfectivo').classList.remove('show');}
 function setEntregado(val){document.getElementById('cantidadEntregada').value=val;calcularCambio();}
-function calcularCambio(){
-    let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;
-    let cambio=entregado-totalNum;
-    document.getElementById('modalCambio').textContent='$'+cambio.toFixed(2)+' MXN';
-    document.getElementById('modalCambio').style.color=cambio>=0?'#25D366':'#ff4d8a';
-}
-function confirmarEfectivo(){
-    let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;
-    if(entregado < totalNum){alert('La cantidad es menor al total');return;}
-    location.href='/pos/pagar/efectivo?entregado='+entregado;
-}
+function calcularCambio(){let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;let cambio=entregado-totalNum;document.getElementById('modalCambio').textContent='$'+cambio.toFixed(2)+' MXN';document.getElementById('modalCambio').style.color=cambio>=0?'#25D366':'#ff4d8a';}
+function confirmarEfectivo(){let entregado=parseFloat(document.getElementById('cantidadEntregada').value)||0;if(entregado < totalNum){alert('La cantidad es menor al total');return;}location.href='/pos/pagar/efectivo?entregado='+entregado;}
 </script>
 """, productos=productos_list, carrito=[{'nombre':x['nombre'],'cant':x['cant'],'total_mxn':format_mxn(x['precio']*x['cant'])} for x in carrito], total=f"{total:,.2f}", total_num=total, mesas_ocupadas=[{'id':m.id,'nombre':m.nombre,'total_mxn':format_mxn(m.total or 0)} for m in mesas_ocupadas], cats=cats, total_hoy_mxn=format_mxn(total_hoy_val))
 
@@ -546,7 +512,7 @@ def productos_list():
         try:
             productos_list.append({'id':p.id,'nombre':p.nombre,'categoria':getattr(p,'categoria',''), 'stock':getattr(p,'stock',0),'img_url':get_producto_imagen(p),'precio_mxn':format_mxn(getattr(p,'precio',0))})
         except: continue
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/eliminar/{{p.id}}" style="color:red">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list)
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-3"><div style="background:white;color:#333;border-radius:4px;padding:15px"><div style="display:flex;justify-content:space-between"><h4>📦 Productos ({{productos|length}})</h4><a href="/productos/nuevo" style="background:var(--rosa);color:white;padding:8px 16px;border-radius:4px;text-decoration:none">+ Crear artículo</a></div><table class="table mt-3"><tr><th>Foto</th><th>Nombre</th><th>Categoría</th><th>Precio MXN</th><th>Stock</th><th>Acciones</th></tr>{% for p in productos %}<tr><td><img src="{{p.img_url}}" style="width:45px;height:45px;object-fit:cover;border-radius:6px"></td><td>{{p.nombre}}</td><td>{{p.categoria}}</td><td>{{p.precio_mxn}}</td><td>{{p.stock}}</td><td><a href="/productos/editar/{{p.id}}" style="color:#00e5ff;margin-right:10px;font-weight:bold">Editar</a><a href="/productos/eliminar/{{p.id}}" onclick="return confirm('¿Borrar {{p.nombre}}?')" style="color:var(--rosa);font-weight:bold">Borrar</a></td></tr>{% endfor %}</table></div></div>""", productos=productos_list)
 
 @app.route('/productos/nuevo', methods=['GET','POST'])
 def productos_nuevo():
@@ -564,13 +530,50 @@ def productos_nuevo():
             <div style="margin-top:20px"><label style="font-size:14px"><input type="checkbox" name="disponible" checked style="accent-color:var(--rosa)"> El artículo está disponible para la venta</label></div>
             <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" checked style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
             <div class="row" style="margin-top:20px"><div class="col-md-6"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" placeholder="10,00" required></div><div class="col-md-6"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" placeholder="5,00"></div></div>
-            <div class="row" style="margin-top:15px"><div class="col-md-6"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-6"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div></div>
+            <div class="row" style="margin-top:15px"><div class="col-md-4"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-4"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="0"></div></div>
             <div style="margin-top:20px"><label class="crear-label">Foto (visible para TODOS)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR ARTÍCULO</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
 <script>
 function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}
 </script>
 """, categorias=categorias)
+
+@app.route('/productos/editar/<int:id>', methods=['GET','POST'])
+def productos_editar(id):
+    if not session.get('is_admin'): return redirect('/dashboard')
+    p = Producto.query.get(id)
+    if not p: return redirect('/productos')
+    categorias=Categoria.query.all()
+    if request.method=='POST':
+        if 'imagen' in request.files and request.files['imagen'].filename:
+            nueva = save_upload(request.files['imagen'])
+            if nueva: p.imagen = nueva
+        p.nombre = request.form.get('nombre','').strip() or p.nombre
+        p.descripcion = request.form.get('descripcion','')
+        p.categoria = request.form.get('categoria','Sin categoria')
+        p.disponible = 'disponible' in request.form
+        p.vendido_por = request.form.get('vendido_por','Unidad')
+        p.precio = float(request.form.get('precio') or 0)
+        p.costo = float(request.form.get('coste') or 0)
+        p.stock = int(request.form.get('stock') or 0)
+        p.ref = request.form.get('ref','')
+        p.codigo_barras = request.form.get('codigo_barras','')
+        db.session.commit()
+        return redirect('/productos')
+    return render_template_string(STYLE_BASE+nav()+"""
+<div class="crear-wrapper"><div class="crear-header"><span>✏️ Editar artículo - {{p.nombre}}</span><a href="/productos" style="background:#000;color:white;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;border:1px solid white">← Volver</a></div>
+    <form method="POST" enctype="multipart/form-data"><div class="crear-card">
+            <div class="row"><div class="col-md-6"><label class="crear-label-rosa">Nombre *</label><input name="nombre" class="crear-input" value="{{p.nombre}}" style="font-size:18px;font-weight:bold" required></div>
+                <div class="col-md-6"><div style="display:flex;justify-content:space-between;align-items:center"><label class="crear-label">Categoría (editable)</label><a href="/admin/categorias" style="color:var(--rosa);font-size:11px;text-decoration:underline">Editar categorías</a></div>
+                    <select name="categoria" class="form-control" style="background:#111!important;color:white!important;border:1px solid #333!important"><option value="{{p.categoria}}" selected>{{p.categoria}} (actual)</option>{% for cat in categorias %}{% if cat.nombre!= p.categoria %}<option value="{{cat.nombre}}">{{cat.nombre}}</option>{% endif %}{% endfor %}</select></div></div>
+            <label class="crear-label" style="margin-top:20px">Descripción</label><textarea name="descripcion" class="crear-input" rows="2">{{p.descripcion}}</textarea>
+            <div style="margin-top:20px"><label style="font-size:14px"><input type="checkbox" name="disponible" {{'checked' if p.disponible else ''}} style="accent-color:var(--rosa)"> El artículo está disponible para la venta</label></div>
+            <div style="margin-top:15px"><label class="crear-label">Vendido por</label><div style="display:flex;gap:15px;margin-top:5px"><label style="font-size:14px"><input type="radio" name="vendido_por" value="Unidad" {{'checked' if p.vendido_por=='Unidad' else ''}} style="accent-color:var(--rosa)"> Unidad</label><label style="font-size:14px"><input type="radio" name="vendido_por" value="Peso/Volumen" {{'checked' if p.vendido_por!='Unidad' else ''}} style="accent-color:var(--rosa)"> Peso/Volumen</label></div></div>
+            <div class="row" style="margin-top:20px"><div class="col-md-4"><label class="crear-label">Precio</label><input name="precio" type="number" step="0.01" class="crear-input" value="{{p.precio}}"></div><div class="col-md-4"><label class="crear-label">Coste</label><input name="coste" type="number" step="0.01" class="crear-input" value="{{p.costo}}"></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="{{p.stock}}"></div></div>
+            <div class="row" style="margin-top:15px"><div class="col-md-6"><label class="crear-label">REF</label><input name="ref" class="crear-input" value="{{p.ref}}"></div><div class="col-md-6"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" value="{{p.codigo_barras}}"></div></div>
+            <div style="margin-top:20px"><label class="crear-label">Foto actual: <img src="{{p.img_url}}" style="width:50px;height:50px;object-fit:cover;border-radius:6px;background:white;padding:2px"></label><br><label class="crear-label">Cambiar foto (opcional - deja vacío para conservar)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
+            <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR CAMBIOS</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
+""", p={'id':p.id,'nombre':p.nombre,'descripcion':p.descripcion or '', 'categoria':p.categoria, 'disponible':p.disponible, 'vendido_por':p.vendido_por or 'Unidad', 'precio':p.precio or 0, 'costo':p.costo or 0, 'stock':p.stock or 0, 'ref':p.ref or '', 'codigo_barras':p.codigo_barras or '', 'img_url':get_producto_imagen(p)}, categorias=categorias)
 
 @app.route('/api/categorias/crear', methods=['POST'])
 def api_categorias_crear():
@@ -606,7 +609,7 @@ function cargarGrafica(){
     document.getElementById('totalGanancia').innerText='$'+(data.total_ventas-data.total_gastos).toFixed(2)+' MXN';
     let ctx=document.getElementById('graficaVentasGastos').getContext('2d');
     if(chart) chart.destroy();
-    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.2)',tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.2)',tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
+    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.1)',tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.1)',tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
   });
 }
 document.getElementById('formGasto').addEventListener('submit',function(e){e.preventDefault();fetch('/api/gasto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({concepto:document.getElementById('concepto').value,monto:document.getElementById('monto').value})}).then(()=>{document.getElementById('concepto').value='';document.getElementById('monto').value='';cargarGrafica();});});
