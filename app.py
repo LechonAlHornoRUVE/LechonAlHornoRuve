@@ -6,7 +6,7 @@ from collections import defaultdict
 import os, urllib.parse, io
 
 app = Flask(__name__)
-app.secret_key = 'lechon-ruve-2026-pos-design-foto'
+app.secret_key = 'ruve-pos-espanol-funcional'
 
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///lechon.db')
 if db_url.startswith("postgres://"):
@@ -21,14 +21,12 @@ class User(db.Model):
     password=db.Column(db.String(200))
     is_admin=db.Column(db.Boolean, default=False)
     rol=db.Column(db.String(20), default="cajero")
-
 class Producto(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     nombre=db.Column(db.String(100))
     precio=db.Column(db.Float)
     stock=db.Column(db.Integer, default=0)
     costo=db.Column(db.Float, default=0)
-
 class Venta(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     cliente=db.Column(db.String(100))
@@ -38,7 +36,6 @@ class Venta(db.Model):
     fecha=db.Column(db.DateTime, default=datetime.utcnow)
     vendedor=db.Column(db.String(80), default="admin")
     costo_total=db.Column(db.Float, default=0)
-
 class Config(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     whatsapp_btn=db.Column(db.Boolean, default=True)
@@ -52,13 +49,11 @@ class Config(db.Model):
     mod_reservas=db.Column(db.Boolean, default=True)
     mod_llevar=db.Column(db.Boolean, default=True)
     mod_dueno=db.Column(db.Boolean, default=True)
-
 class Mesa(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     nombre=db.Column(db.String(50))
     estado=db.Column(db.String(20), default="libre")
     total=db.Column(db.Float, default=0)
-
 class Comanda(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     mesa_id=db.Column(db.Integer, db.ForeignKey('mesa.id'))
@@ -68,7 +63,6 @@ class Comanda(db.Model):
     fecha=db.Column(db.DateTime, default=datetime.utcnow)
     mesero=db.Column(db.String(80))
     mesa = db.relationship('Mesa', backref='comandas')
-
 class Cliente(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     nombre=db.Column(db.String(100))
@@ -76,7 +70,6 @@ class Cliente(db.Model):
     visitas=db.Column(db.Integer, default=0)
     gasto_total=db.Column(db.Float, default=0)
     ultima_visita=db.Column(db.DateTime, default=datetime.utcnow)
-
 class Reserva(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     cliente_nombre=db.Column(db.String(100))
@@ -87,7 +80,6 @@ class Reserva(db.Model):
     mesa_id=db.Column(db.Integer, db.ForeignKey('mesa.id'), nullable=True)
     estado=db.Column(db.String(20), default="pendiente")
     mesa = db.relationship('Mesa', backref='reservas')
-
 class PedidoLlevar(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     cliente_nombre=db.Column(db.String(100))
@@ -101,7 +93,6 @@ class PedidoLlevar(db.Model):
     fecha=db.Column(db.DateTime, default=datetime.utcnow)
     vendedor=db.Column(db.String(80))
     costo_total=db.Column(db.Float, default=0)
-
 class Gasto(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     concepto=db.Column(db.String(100))
@@ -144,41 +135,37 @@ with app.app_context():
             db.session.add(Mesa(nombre=f"Mesa {i}", estado="libre", total=0))
         db.session.commit()
 
-# ESTILOS BASE (conservamos tu negro + rosa)
 STYLE_BASE = """
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
 body{background:#000;color:white;font-family:Arial}
 .card{background:#111;border:2px solid #ff4d8a;border-radius:15px;padding:20px}
 .btn-rosa{background:#ff4d8a;color:white;border:none;padding:10px 18px;border-radius:10px;font-weight:bold}
-.btn-whats{background:#25D366;color:white;padding:6px 12px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:bold}
 .navbar{background:#000!important;border-bottom:2px solid #ff4d8a}
 input,select{background:#222!important;color:white!important;border:1px solid #ff4d8a!important}
 textarea{background:#222!important;color:white!important;border:1px solid #ff4d8a!important}
 a{color:#ff4d8a;text-decoration:none}
-.mesa-libre{border:3px solid #25D366;background:#0a1a0a;padding:20px;border-radius:15px;text-align:center;cursor:pointer}
-.mesa-ocupada{border:3px solid #ff4d3a;background:#1a0a0a;padding:20px;border-radius:15px;text-align:center;cursor:pointer}
 @media print{.no-print{display:none} body{background:white;color:black}}
-/* NUEVO POS STYLE FOTO */
 .pos-container{display:flex;height:calc(100vh - 70px);gap:10px;padding:10px}
 .pos-left{width:38%;background:#0f0f0f;border:2px solid #ff4d8a;border-radius:15px;display:flex;flex-direction:column}
 .pos-center{width:12%;display:flex;flex-direction:column;gap:8px}
 .pos-right{width:50%;background:#0f0f0f;border:2px solid #333;border-radius:15px;padding:10px;overflow-y:auto}
-.cat-btn{background:#8BC34A;color:black;font-weight:bold;padding:14px;border:none;border-radius:8px;cursor:pointer;text-align:center}
-.cat-btn.active{background:#ff4d8a;color:white}
+.cat-btn{background:#222;color:white;font-weight:bold;padding:14px;border:2px solid #333;border-radius:8px;cursor:pointer;text-align:center}
+.cat-btn.active{background:#ff4d8a;color:white;border-color:#ff4d8a}
 .prod-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.prod-card{background:#1a1a1a;border:2px solid #333;border-radius:12px;padding:10px;text-align:center;cursor:pointer;transition:0.2s}
-.prod-card:hover{border-color:#ff4d8a;transform:scale(1.03)}
+.prod-card{background:#1a1a1a;border:2px solid #333;border-radius:12px;padding:10px;text-align:center;cursor:pointer}
+.prod-card:hover{border-color:#ff4d8a}
 .prod-card img{width:70px;height:70px;object-fit:cover;border-radius:10px;background:white;padding:5px}
 .prod-card h6{color:#ff4d8a;margin:8px 0 2px 0;font-size:13px;font-weight:bold}
-.prod-card small{color:#aaa}
 .ticket-header{background:#111;padding:12px;border-bottom:2px solid #ff4d8a;border-radius:15px 15px 0 0}
 .ticket-body{flex:1;overflow-y:auto;padding:10px;background:white;color:black}
 .ticket-footer{background:#111;padding:12px;border-top:2px solid #ff4d8a}
-.ticket-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ccc;font-size:13px}
+.ticket-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #ccc;font-size:13px}
 .btn-cash{background:#25D366;color:white;font-weight:bold;padding:12px;border:none;border-radius:8px;width:48%}
 .btn-pay{background:#3f51b5;color:white;font-weight:bold;padding:12px;border:none;border-radius:8px;width:48%}
 .btn-suspend{background:#ff9800;color:black;font-weight:bold;padding:10px;border:none;border-radius:8px;width:100%;margin-top:8px}
+.qty-btn{border:none;background:#ff4d8a;color:white;border-radius:5px;padding:2px 8px;font-weight:bold}
+.qty-btn.minus{background:#555}
 </style>
 """
 
@@ -201,7 +188,7 @@ def check_mod(mod_name):
     if not getattr(cfg, mod_name, True):
         if mod_name=='mod_dueno' and not session.get('is_admin'): return redirect('/dashboard')
         if mod_name!='mod_dueno':
-            return render_template_string(STYLE_BASE+nav()+f'<div class="container mt-5"><div class="card text-center"><h3 style="color:#ff4d3a">Módulo Deshabilitado</h3><p>Actívalo en ⚙️ Config</p><a href="/dashboard" class="btn-rosa">Volver</a></div></div>')
+            return render_template_string(STYLE_BASE+nav()+f'<div class="container mt-5"><div class="card text-center"><h3 style="color:#ff4d3a">Módulo Deshabilitado</h3><a href="/dashboard" class="btn-rosa">Volver</a></div></div>')
     return None
 
 def make_whats_msg(v): return urllib.parse.quote(f"Hola {v.cliente}! 🐖 Tu pedido Ruve: {v.cantidad}x {v.producto_nombre} - ${v.total}. Ticket #{v.id}")
@@ -209,6 +196,13 @@ def admin_required():
     if 'user' not in session: return redirect('/')
     if not session.get('is_admin'): return redirect('/dashboard')
     return None
+def get_categoria(nombre):
+    n=nombre.lower()
+    if 'lech' in n: return 'lechon'
+    if 'torta' in n: return 'tortas'
+    if 'orden' in n: return 'ordenes'
+    if 'refresco' in n or 'coca' in n or 'bebida' in n or 'agua' in n: return 'bebidas'
+    return 'extras'
 
 @app.route('/', methods=['GET','POST'])
 def login():
@@ -227,16 +221,16 @@ def login():
             return redirect('/dashboard')
     return render_template_string(STYLE_BASE+f'<div class="container" style="max-width:420px;margin-top:25px"><div class="card text-center"><img src="/static/logo.png?v=ruve3" style="width:210px;height:210px;object-fit:contain;background:white;border-radius:50%;padding:8px;border:3px solid #ff4d8a;margin:0 auto"><h2 style="color:#ff4d8a" class="mt-3">LechonAlHornoRuve</h2><form method="POST" class="mt-4 text-start"><input name="username" class="form-control mb-3" placeholder="Usuario" required><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required><button class="btn-rosa w-100">ENTRAR</button></form></div></div>')
 
-# NUEVO DASHBOARD ESTILO FOTO
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session: return redirect('/')
     cfg=get_config()
     productos=Producto.query.all()
+    # asignar categoria a cada producto para filtrado
+    for p in productos:
+        p.categoria = get_categoria(p.nombre)
     carrito=session.get('carrito',[])
-    # calcular totales carrito
-    total = sum([p['precio']*p['cant'] for p in carrito])
-    # ventas recientes para lista abajo
+    total = sum([x['precio']*x['cant'] for x in carrito])
     hoy=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
     if session.get('is_admin'):
         ventas = Venta.query.filter(Venta.fecha>=hoy).order_by(Venta.id.desc()).limit(8).all()
@@ -248,77 +242,93 @@ def dashboard():
 
     html = STYLE_BASE+nav()+"""
 <div class="pos-container no-print">
-    <!-- IZQUIERDA: TICKET COMO EN LA FOTO -->
     <div class="pos-left">
         <div class="ticket-header">
-            <div style="display:flex;justify-content:space-between"><small style="color:#aaa">Selected Table: --</small><small style="color:#aaa">{{fecha}} {{hora}}</small></div>
+            <div style="display:flex;justify-content:space-between"><small style="color:#aaa">Mesa: Mostrador</small><small style="color:#aaa">{{fecha}} {{hora}}</small></div>
             <div class="d-flex gap-2 mt-2">
-                <input id="clienteInput" class="form-control" placeholder="👤 Cliente (Mostrador)" value="{{cliente_actual}}" list="clientes-list" style="background:#222!important">
+                <input id="clienteInput" class="form-control" placeholder="👤 Cliente (Mostrador)" value="{{cliente_actual}}" list="clientes-list">
                 <datalist id="clientes-list">{% for c in clientes %}<option value="{{c.nombre}}">{% endfor %}</datalist>
             </div>
-            <input class="form-control mt-2" placeholder="Insert Barcode / Buscar" disabled style="opacity:0.5">
         </div>
         <div class="ticket-body">
-            <div style="display:flex;justify-content:space-between;font-weight:bold;border-bottom:2px solid black;padding-bottom:5px"><span>De</span><span>Items</span><span>Price</span><span>Qty</span><span>Total</span><span>X</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:bold;border-bottom:2px solid black;padding-bottom:5px;font-size:11px"><span style="width:5%">#</span><span style="width:40%">Artículo</span><span style="width:15%">Precio</span><span style="width:20%">Cant</span><span style="width:15%">Total</span><span style="width:5%">X</span></div>
             <div id="ticketItems">
             {% for item in carrito %}
-                <div class="ticket-row"><span style="color:green">X</span><span>{{item.nombre}}</span><span>{{item.precio}}</span><span>{{item.cant}}</span><span>${{item.precio*item.cant}}</span><span><a href="/pos/remove/{{loop.index0}}" style="color:red">X</a></span></div>
+                <div class="ticket-row">
+                    <span style="width:5%;color:green">{{loop.index}}</span>
+                    <span style="width:40%">{{item.nombre}}</span>
+                    <span style="width:15%">${{item.precio}}</span>
+                    <span style="width:20%">
+                        <button class="qty-btn minus" onclick="window.location='/pos/cant/{{loop.index0}}/-1'">-</button>
+                        <b>{{item.cant}}</b>
+                        <button class="qty-btn" onclick="window.location='/pos/cant/{{loop.index0}}/1'">+</button>
+                    </span>
+                    <span style="width:15%">${{item.precio*item.cant}}</span>
+                    <span style="width:5%"><a href="/pos/remove/{{loop.index0}}" style="color:red;font-weight:bold">X</a></span>
+                </div>
             {% endfor %}
-            {% if not carrito %}<p style="color:#888;text-align:center;margin-top:30px">Toca un producto a la derecha para agregar</p>{% endif %}
+            {% if not carrito %}<p style="color:#888;text-align:center;margin-top:30px">Toca un producto a la derecha para agregar al ticket</p>{% endif %}
             </div>
         </div>
         <div class="ticket-footer">
             <div style="color:#aaa;font-size:12px">
                 <div style="display:flex;justify-content:space-between"><span>Total</span><span>${{total}}</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Discount</span><span>0</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Sub Total</span><span>0</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Tax 14.44</span><span>0</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Descuento</span><span>$0</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Sub Total</span><span>${{total}}</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Impuesto</span><span>$0</span></div>
                 <hr style="border-color:#ff4d8a">
-                <div style="display:flex;justify-content:space-between;font-weight:bold;color:white;font-size:16px"><span>Total Payable</span><span>${{total}}</span></div>
+                <div style="display:flex;justify-content:space-between;font-weight:bold;color:white;font-size:18px"><span>Total a Pagar</span><span>${{total}}</span></div>
             </div>
             <div style="display:flex;gap:8px;margin-top:12px">
-                <button onclick="pagar('efectivo')" class="btn-cash">Cash Sale</button>
-                <button onclick="pagar('tarjeta')" class="btn-pay">Payment</button>
+                <button onclick="pagar('efectivo')" class="btn-cash">💵 Venta Efectivo</button>
+                <button onclick="pagar('tarjeta')" class="btn-pay">💳 Cobrar</button>
             </div>
-            <button onclick="window.location='/pos/clear'" class="btn-suspend">Suspend / Limpiar</button>
-            <div class="mt-2" style="font-size:10px;color:#666">3 x 4.99 + Tax - Hoy ${{total_hoy}} - {{ventas|length}} ventas</div>
+            <button onclick="window.location='/pos/clear'" class="btn-suspend">🗑️ Suspender / Limpiar Ticket</button>
+            <div class="mt-2" style="font-size:10px;color:#666">Hoy: ${{total_hoy}} - {{ventas|length}} tickets - Cajero puede editar ticket con + - X</div>
         </div>
     </div>
 
-    <!-- CENTRO: CATEGORIAS COMO EN LA FOTO -->
     <div class="pos-center">
-        <button class="cat-btn active">Todos</button>
-        <button class="cat-btn">Lechón</button>
-        <button class="cat-btn">Tortas</button>
-        <button class="cat-btn">Ordenes</button>
-        <button class="cat-btn">Bebidas</button>
-        <button class="cat-btn">Extras</button>
+        <button class="cat-btn active" onclick="filtrar('todos')" id="btn-todos">Todos</button>
+        <button class="cat-btn" onclick="filtrar('lechon')" id="btn-lechon">Lechón</button>
+        <button class="cat-btn" onclick="filtrar('tortas')" id="btn-tortas">Tortas</button>
+        <button class="cat-btn" onclick="filtrar('ordenes')" id="btn-ordenes">Órdenes</button>
+        <button class="cat-btn" onclick="filtrar('bebidas')" id="btn-bebidas">Bebidas</button>
+        <button class="cat-btn" onclick="filtrar('extras')" id="btn-extras">Extras</button>
         <div style="margin-top:auto;background:#111;border:1px solid #ff4d8a;border-radius:10px;padding:10px">
             <small style="color:#ff4d8a">Ventas Hoy</small><h5>${{total_hoy}}</h5>
-            <small style="color:#aaa">Últimas:</small>
-            {% for v in ventas %}<div style="font-size:10px;color:#aaa">{{v.cliente}} - ${{v.total}} <a href="/ticket/{{v.id}}" style="color:#ff4d8a">TK</a> {% if is_admin %}<a href="/eliminar_venta/{{v.id}}" style="color:red" onclick="return confirm('¿Borrar?')">🗑️</a>{% endif %}</div>{% endfor %}
+            {% for v in ventas %}<div style="font-size:10px;color:#aaa">{{v.cliente}} - ${{v.total}} <a href="/ticket/{{v.id}}" style="color:#ff4d8a">TK</a> {% if is_admin %}<a href="/eliminar_venta/{{v.id}}" style="color:red">🗑️</a>{% endif %}</div>{% endfor %}
         </div>
     </div>
 
-    <!-- DERECHA: PRODUCTOS EN CUADRICULA COMO EN LA FOTO -->
     <div class="pos-right">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px"><small style="color:#aaa">Search</small><small style="color:#aaa">Name</small></div>
-        <div class="prod-grid">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px"><small style="color:#aaa">Buscar producto...</small><small style="color:#aaa">Toca para agregar al ticket</small></div>
+        <div class="prod-grid" id="prodGrid">
             {% for p in productos %}
-            <div class="prod-card" onclick="window.location='/pos/add/{{p.id}}'">
+            <div class="prod-card" data-cat="{{p.categoria}}" onclick="window.location='/pos/add/{{p.id}}'">
                 <img src="/static/logo.png?v=ruve3" alt="{{p.nombre}}">
                 <h6>{{p.nombre}}</h6>
                 <small>${{p.precio}} | Stock {{p.stock}}</small>
-                {% if p.stock <= 3 %}<div style="color:#ffcc00;font-size:10px">⚠️ BAJO</div>{% endif %}
-                <div style="font-size:10px;color:#25D366">${{p.precio - p.costo}} ganancia</div>
+                {% if p.stock <= 3 %}<div style="color:#ffcc00;font-size:10px">⚠️ BAJO STOCK</div>{% endif %}
             </div>
             {% endfor %}
         </div>
-        <div style="text-align:center;margin-top:15px;color:#666;font-size:11px">Double Click for Qty increase - Ruve POS - Home Menu</div>
+        <div style="text-align:center;margin-top:15px;color:#666;font-size:11px">Doble clic aumenta cantidad - Sistema Ruve Chetumal</div>
     </div>
 </div>
 
 <script>
+function filtrar(cat){
+    document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('btn-'+cat).classList.add('active');
+    document.querySelectorAll('.prod-card').forEach(card=>{
+        if(cat==='todos' || card.dataset.cat===cat){
+            card.style.display='block';
+        } else {
+            card.style.display='none';
+        }
+    });
+}
 function pagar(tipo){
     let cliente = document.getElementById('clienteInput').value || 'Mostrador';
     fetch('/pos/pagar', {
@@ -327,20 +337,14 @@ function pagar(tipo){
         body: JSON.stringify({cliente: cliente, tipo: tipo})
     }).then(r=>r.json()).then(data=>{
         if(data.ok){
-            if(data.ticket_id){
-                window.location = '/ticket/'+data.ticket_id;
-            } else {
-                window.location = '/dashboard';
-            }
-        } else {
-            alert(data.error);
-        }
+            if(data.ticket_id){ window.location = '/ticket/'+data.ticket_id; }
+            else { window.location = '/dashboard'; }
+        } else { alert(data.error); }
     });
 }
 </script>
 
-<!-- VISTA MOVIL: Si es celular, muestra versión simplificada -->
-<div class="container d-md-none mt-3">
+<div class="container d-md-none mt-3 no-print">
     <div class="card"><h5>POS Móvil Ruve</h5>
     <form action="/vender_directo" method="POST" class="row g-2 mt-2">
         <div class="col-12"><input name="cliente" class="form-control" placeholder="Cliente" list="clientes-list"></div>
@@ -350,9 +354,8 @@ function pagar(tipo){
     </form></div>
 </div>
 """
-    return render_template_string(html, productos=productos, carrito=carrito, total=total, total_hoy=total_hoy, ventas=ventas, fecha=datetime.now().strftime("%A, %B %d, %Y"), hora=datetime.now().strftime("%H:%M"), clientes=Cliente.query.all(), cliente_actual=session.get('cliente_actual',''), is_admin=session.get('is_admin'), cfg=cfg)
+    return render_template_string(html, productos=productos, carrito=carrito, total=total, total_hoy=total_hoy, ventas=ventas, fecha=datetime.now().strftime("%d/%m/%Y"), hora=datetime.now().strftime("%H:%M"), clientes=Cliente.query.all(), cliente_actual=session.get('cliente_actual',''), is_admin=session.get('is_admin'), cfg=cfg)
 
-# RUTAS NUEVO POS
 @app.route('/pos/add/<int:id>')
 def pos_add(id):
     if 'user' not in session: return redirect('/')
@@ -360,7 +363,6 @@ def pos_add(id):
     if not prod or prod.stock<=0:
         return redirect('/dashboard')
     carrito=session.get('carrito',[])
-    # si ya existe, aumenta cantidad
     found=False
     for item in carrito:
         if item['id']==prod.id:
@@ -370,6 +372,16 @@ def pos_add(id):
     if not found:
         carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'costo':prod.costo or 0,'cant':1})
     session['carrito']=carrito
+    return redirect('/dashboard')
+
+@app.route('/pos/cant/<int:index>/<int:delta>')
+def pos_cant(index, delta):
+    carrito=session.get('carrito',[])
+    if 0 <= index < len(carrito):
+        carrito[index]['cant']+=delta
+        if carrito[index]['cant']<=0:
+            carrito.pop(index)
+        session['carrito']=carrito
     return redirect('/dashboard')
 
 @app.route('/pos/remove/<int:index>')
@@ -392,7 +404,7 @@ def pos_pagar():
     cliente=(data.get('cliente') or 'Mostrador').strip() or 'Mostrador'
     carrito=session.get('carrito',[])
     if not carrito:
-        return jsonify({'ok':False,'error':'Carrito vacío'})
+        return jsonify({'ok':False,'error':'Ticket vacío - agrega productos'})
     last_ticket_id=None
     for item in carrito:
         prod=Producto.query.get(item['id'])
@@ -404,7 +416,6 @@ def pos_pagar():
         db.session.add(v)
         db.session.flush()
         last_ticket_id=v.id
-        # cliente frecuente
         cli=Cliente.query.filter_by(nombre=cliente).first()
         if not cli:
             cli=Cliente(nombre=cliente, telefono="", visitas=0, gasto_total=0)
@@ -440,7 +451,6 @@ def eliminar_venta(id):
         db.session.delete(v); db.session.commit()
     return redirect(request.referrer or '/ventas')
 
-# --- MESAS ---
 @app.route('/mesas')
 def mesas_view():
     if 'user' not in session: return redirect('/')
@@ -580,7 +590,6 @@ def ticket(id):
     if not cfg.tickets: return redirect('/dashboard')
     v=Venta.query.get(id)
     if not session.get('is_admin') and v.vendedor!= session.get('user'): return redirect('/dashboard')
-    msj=make_whats_msg(v)
     return render_template_string(STYLE_BASE+f'<div class="container" style="max-width:380px;margin-top:20px"><div class="card" style="background:white;color:black;border:2px dashed black"><div class="text-center"><img src="/static/logo.png?v=ruve3" style="width:110px"><h5 style="font-weight:bold">LECHÓN AL HORNO RUVE</h5></div><hr><p><b>Ticket #{v.id}</b><br>Cliente: {v.cliente}<br>Vendedor: {v.vendedor}<br>Fecha: {v.fecha.strftime("%d/%m/%Y %H:%M")}<br>Producto: {v.producto_nombre}<br>Cant: {v.cantidad}<br><b>Total: ${v.total}</b></p><div class="text-center no-print"><button onclick="window.print()" class="btn-rosa">🖨️ IMPRIMIR</button><a href="/dashboard" class="btn btn-dark ms-2">Volver</a></div></div></div>')
 
 @app.route('/productos', methods=['GET','POST'])
