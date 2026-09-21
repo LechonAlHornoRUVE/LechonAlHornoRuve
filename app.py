@@ -39,7 +39,7 @@ try:
             db.session.add_all([
                 Producto(nombre='Lechón por Kilo', precio=350, stock=20),
                 Producto(nombre='Lechón Entero', precio=3500, stock=5),
-                Producto(nombre='Tacos de Lechón (orden)', precio=120, stock=50),
+                Producto(nombre='Torta Lechon', precio=50, stock=50),
             ])
             db.session.commit()
 except: pass
@@ -55,6 +55,8 @@ body{background:#000;color:white;font-family:Arial}
 .navbar{background:#000!important;border-bottom:2px solid #ff1493}
 .table-dark{--bs-table-bg:#111}
 input,select{background:#222!important;color:white!important;border:1px solid #ff1493!important}
+::placeholder{color:#bbb!important;opacity:1}
+input::placeholder{color:#bbb!important}
 a{color:#ff1493;text-decoration:none}
 @media print{ .no-print{display:none} body{background:white;color:black} }
 </style>
@@ -81,7 +83,7 @@ DASH_HTML = STYLE + """
 </div>
 <div class="card mt-4"><h4 style="color:#ff1493">Vender Rápido - Chetumal</h4>
 <form action="/vender" method="POST" class="row g-2 mt-2">
-<div class="col-md-3"><input name="cliente" class="form-control" placeholder="Cliente" required></div>
+<div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente (opcional) Ej: Mostrador"></div>
 <div class="col-md-3"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}}</option>{% endfor %}</select></div>
 <div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control" required></div>
 <div class="col-md-4"><button class="btn-rosa w-100">💰 REGISTRAR VENTA</button></div>
@@ -109,14 +111,13 @@ REPORTE_HTML = STYLE + """
 <div class="row mt-4"><div class="col-md-6"><h5>Total Vendido Hoy: <span style="color:#25D366">${{total_hoy}}</span></h5><h6>Órdenes hoy: {{ventas_hoy|length}}</h6></div>
 <div class="col-md-6 text-end no-print"><button onclick="window.print()" class="btn-rosa">🖨️ IMPRIMIR REPORTE</button> <a href="https://wa.me/?text={{whats_reporte}}" target="_blank" class="btn-whats p-2">📲 Enviar Reporte por WhatsApp</a></div></div>
 <table class="table table-dark table-bordered mt-4"><tr><th>Hora</th><th>Cliente</th><th>Producto</th><th>Total</th></tr>{% for v in ventas_hoy %}<tr><td>{{v.fecha.strftime('%H:%M')}}</td><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td></tr>{% endfor %}</table>
-{% if ventas_hoy|length==0 %}<p class="text-center">Sin ventas hoy</p>{% endif %}
 </div></div>
 """
 
 PROD_HTML = STYLE + """
 <nav class="navbar p-3"><h4 style="color:#ff1493" class="m-0">🐖 Productos</h4><div><a href="/dashboard" class="me-3">Dashboard</a><a href="/logout">Salir</a></div></nav>
 <div class="container mt-4"><div class="card">
-<h4>Agregar Producto</h4><form method="POST" class="row g-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form>
+<h4>Agregar Producto</h4><form method="POST" class="row g-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre producto" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio $" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form>
 <table class="table table-dark table-bordered mt-4"><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td>{{p.nombre}}</td><td>${{p.precio}}</td><td>{{p.stock}}</td><td><a href="/eliminar_producto/{{p.id}}" style="color:red">Eliminar</a></td></tr>{% endfor %}</table></div></div>
 """
 
@@ -172,7 +173,10 @@ def vender():
     prod=Producto.query.get(int(request.form['producto_id']))
     cant=int(request.form['cantidad'])
     total=prod.precio * cant
-    v=Venta(cliente=request.form['cliente'], producto_nombre=prod.nombre, cantidad=cant, total=total)
+    cliente_nombre = request.form.get('cliente')
+    if not cliente_nombre or cliente_nombre.strip() == "":
+        cliente_nombre = "Mostrador"
+    v=Venta(cliente=cliente_nombre, producto_nombre=prod.nombre, cantidad=cant, total=total)
     if prod.stock >= cant: prod.stock -= cant
     db.session.add(v); db.session.commit()
     return redirect(f'/ticket/{v.id}')
