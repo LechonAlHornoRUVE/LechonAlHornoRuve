@@ -6,9 +6,8 @@ from collections import defaultdict
 import os, urllib.parse, io
 
 app = Flask(__name__)
-app.secret_key = 'lechon-ruve-2026-final-fase2'
+app.secret_key = 'lechon-ruve-2026-final-fase3-toggle'
 
-# --- BASE DE DATOS PERMANENTE ---
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///lechon.db')
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -45,6 +44,12 @@ class Config(db.Model):
     reporte_pdf=db.Column(db.Boolean, default=True)
     total_whatsapp=db.Column(db.Boolean, default=True)
     numero_whatsapp=db.Column(db.String(20), default="529831000000")
+    # --- NUEVO TOGGLES FASE 3 ---
+    mod_mesas=db.Column(db.Boolean, default=True)
+    mod_cocina=db.Column(db.Boolean, default=True)
+    mod_clientes=db.Column(db.Boolean, default=True)
+    mod_reservas=db.Column(db.Boolean, default=True)
+    mod_llevar=db.Column(db.Boolean, default=True)
 
 class Mesa(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -62,36 +67,65 @@ class Comanda(db.Model):
     mesero=db.Column(db.String(80))
     mesa = db.relationship('Mesa', backref='comandas')
 
+class Cliente(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    nombre=db.Column(db.String(100))
+    telefono=db.Column(db.String(20))
+    visitas=db.Column(db.Integer, default=0)
+    gasto_total=db.Column(db.Float, default=0)
+    ultima_visita=db.Column(db.DateTime, default=datetime.utcnow)
+
+class Reserva(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    cliente_nombre=db.Column(db.String(100))
+    telefono=db.Column(db.String(20))
+    fecha=db.Column(db.String(20))
+    hora=db.Column(db.String(20))
+    personas=db.Column(db.Integer)
+    mesa_id=db.Column(db.Integer, db.ForeignKey('mesa.id'), nullable=True)
+    estado=db.Column(db.String(20), default="pendiente")
+    mesa = db.relationship('Mesa', backref='reservas')
+
+class PedidoLlevar(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    cliente_nombre=db.Column(db.String(100))
+    telefono=db.Column(db.String(20))
+    producto_nombre=db.Column(db.String(100))
+    cantidad=db.Column(db.Integer)
+    total=db.Column(db.Float)
+    tipo=db.Column(db.String(20), default="llevar")
+    direccion=db.Column(db.String(200), default="")
+    estado=db.Column(db.String(20), default="cocina")
+    fecha=db.Column(db.DateTime, default=datetime.utcnow)
+    vendedor=db.Column(db.String(80))
+
 def get_config():
     c=Config.query.first()
     if not c: c=Config(); db.session.add(c); db.session.commit()
     return c
 
-# --- INICIALIZACIÓN QUE NO BORRA FASE 1 ---
 with app.app_context():
     from sqlalchemy import text
-    # 1. Crear tablas que falten
     db.create_all()
-    # 2. PARCHE PARA EL ERROR 502: agregar columna rol si no existe
-    try:
-        db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT \'cajero\''))
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        print(f"Parche rol: {e}")
-    # 3. Crear datos base
+    # Parches para no borrar nada y agregar columnas nuevas
+    for col in ['rol','mod_mesas','mod_cocina','mod_clientes','mod_reservas','mod_llevar']:
+        try:
+            if col=='rol':
+                db.session.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT \'cajero\''))
+            else:
+                db.session.execute(text(f'ALTER TABLE config ADD COLUMN IF NOT EXISTS {col} BOOLEAN DEFAULT TRUE'))
+            db.session.commit()
+        except:
+            db.session.rollback()
     try:
         if not User.query.filter_by(username='admin').first():
             db.session.add(User(username='admin', password=generate_password_hash('admin123'), is_admin=True, rol="admin")); db.session.commit()
         else:
-            u=User.query.filter_by(username='admin').first()
-            if not hasattr(u, 'rol') or u.rol is None:
-                u.rol="admin"
-            u.is_admin=True
+            u=User.query.filter_by(username='admin').first(); u.is_admin=True
+            if not u.rol: u.rol="admin"
             db.session.commit()
     except:
         db.session.rollback()
-
     get_config()
     if Producto.query.count()==0:
         db.session.add_all([Producto(nombre='Lechón por Kilo', precio=350, stock=50), Producto(nombre='Lechón Entero', precio=3500, stock=5), Producto(nombre='Torta de Lechón', precio=70, stock=30)]); db.session.commit()
@@ -106,6 +140,7 @@ body{background:#000;color:white;font-family:Arial}.card{background:#111;border:
 .btn-whats{background:#25D366;color:white;padding:6px 12px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:bold}
 .navbar{background:#000!important;border-bottom:2px solid #ff4d8a}
 input,select{background:#222!important;color:white!important;border:1px solid #ff4d8a!important}
+textarea{background:#222!important;color:white!important;border:1px solid #ff4d8a!important}
 a{color:#ff4d8a;text-decoration:none}
 .mesa-libre{border:3px solid #25D366;background:#0a1a0a;padding:20px;border-radius:15px;text-align:center;cursor:pointer}
 .mesa-ocupada{border:3px solid #ff4d3a;background:#1a0a0a;padding:20px;border-radius:15px;text-align:center;cursor:pointer}
@@ -113,16 +148,27 @@ a{color:#ff4d8a;text-decoration:none}
 </style>"""
 
 def nav():
-    rol = session.get('rol','cajero')
-    is_admin = session.get('is_admin', False)
+    cfg=get_config(); rol = session.get('rol','cajero'); is_admin = session.get('is_admin', False)
     links=""
-    if is_admin or rol in ['admin','cajero','mesero']:
+    if cfg.mod_mesas and (is_admin or rol in ['admin','cajero','mesero']):
         links+= '<a href="/mesas" class="me-3" style="color:#00e5ff">🪑 Mesas</a>'
-    if is_admin or rol in ['cocina','admin','cajero']:
+    if cfg.mod_cocina and (is_admin or rol in ['cocina','admin','cajero']):
         links+= '<a href="/cocina" class="me-3" style="color:#ffcc00">🔥 Cocina</a>'
+    if cfg.mod_clientes and (is_admin or rol in ['admin','cajero','mesero']):
+        links+= '<a href="/clientes" class="me-3" style="color:#00ffaa">👤 Clientes</a>'
+    if cfg.mod_reservas and (is_admin or rol in ['admin','cajero','mesero']):
+        links+= '<a href="/reservas" class="me-3" style="color:#aa88ff">📅 Reservas</a>'
+    if cfg.mod_llevar and (is_admin or rol in ['admin','cajero','mesero']):
+        links+= '<a href="/para_llevar" class="me-3" style="color:#ffaa00">🛵 Llevar</a>'
     admin_links = f'<a href="/admin/config" class="me-3" style="color:#25D366">⚙️ Config</a><a href="/admin/usuarios" class="me-3" style="color:#ffcc00">👥 Usuarios</a>' if is_admin else ''
     prod_link = '<a href="/productos" class="me-3">Productos</a>' if is_admin else ''
     return f'<nav class="navbar p-3"><div class="d-flex align-items-center"><img src="/static/logo.png?v=ruve3" style="width:45px;height:45px;border-radius:50%;margin-right:10px;background:white;padding:3px"><h4 style="color:#ff4d8a" class="m-0">Ruve</h4> <small style="color:#aaa;margin-left:10px">{session.get("user")} ({rol})</small></div><div><a href="/dashboard" class="me-3">POS</a>{links}{prod_link}<a href="/ventas" class="me-3">Ventas</a><a href="/reporte" class="me-3">Reporte</a>{admin_links}<a href="/logout">Salir</a></div></nav>'
+
+def check_mod(mod_name):
+    cfg=get_config()
+    if not getattr(cfg, mod_name, True):
+        return render_template_string(STYLE+nav()+f'<div class="container mt-5"><div class="card text-center"><h3 style="color:#ff4d3a">Módulo Deshabilitado</h3><p style="color:#aaa">El administrador ha deshabilitado este módulo. Actívalo en ⚙️ Config</p><a href="/dashboard" class="btn-rosa">Volver al POS</a></div></div>')
+    return None
 
 def make_whats_msg(v): return urllib.parse.quote(f"Hola {v.cliente}! 🐖 Tu pedido Ruve: {v.cantidad}x {v.producto_nombre} - ${v.total}. Ticket #{v.id}")
 def admin_required():
@@ -155,15 +201,17 @@ def dashboard():
         total_hoy = sum([v.total for v in ventas_q.filter(Venta.fecha>=hoy).all()]); num_ventas = ventas_q.count()
     html=STYLE+nav()+"""<div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card text-center"><h6>{% if is_admin %}Ventas Hoy (Todos){% else %}Mis Ventas Hoy{% endif %}</h6><h2 style="color:#ff4d8a">${{total_hoy}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>Productos</h6><h2 style="color:#ff4d8a">{{num_prod}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>{% if is_admin %}Tickets Totales{% else %}Mis Tickets{% endif %}</h6><h2 style="color:#ff4d8a">{{num_ventas}}</h2></div></div></div>
     <div class="card mt-4"><h5 style="color:#ff4d8a">Vender Rápido - Chetumal ({{session.get('user')}})</h5>
-    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente"></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} (Stock: {{p.stock}}) {% if p.stock <= 3 %}⚠️ BAJO{% endif %}</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
+    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente" list="clientes-list"><datalist id="clientes-list">{% for c in clientes %}<option value="{{c.nombre}}">{% endfor %}</datalist></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} (Stock: {{p.stock}}) {% if p.stock <= 3 %}⚠️ BAJO{% endif %}</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
     <div class="card mt-4"><h5>{% if is_admin %}Últimas Ventas{% else %}Mis Últimas Ventas{% endif %}</h5><table class="table table-dark table-bordered mt-3"><tr><th>Cliente</th><th>Producto</th><th>Total</th>{% if is_admin %}<th>Vendedor</th>{% endif %}<th>Acciones</th></tr>
     {% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td>{% if is_admin %}<td>{{v.vendedor}}</td>{% endif %}<td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px">TICKET</a>{% endif %}{% if cfg.whatsapp_btn %}<a href="https://wa.me/?text={{v.msj}}" target="_blank" class="btn-whats ms-1">WA</a>{% endif %}</td></tr>{% endfor %}</table></div></div>"""
     for v in ventas: v.msj=make_whats_msg(v)
-    return render_template_string(html, productos=productos, ventas=ventas, total_hoy=total_hoy, num_prod=Producto.query.count(), num_ventas=num_ventas, cfg=cfg, is_admin=session.get('is_admin'))
+    return render_template_string(html, productos=productos, ventas=ventas, total_hoy=total_hoy, num_prod=Producto.query.count(), num_ventas=num_ventas, cfg=cfg, is_admin=session.get('is_admin'), clientes=Cliente.query.all())
 
 @app.route('/mesas')
 def mesas_view():
     if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_mesas'); 
+    if chk: return chk
     mesas = Mesa.query.all()
     return render_template_string(STYLE+nav()+"""
     <div class="container mt-4"><div class="card"><h4 style="color:#00e5ff">🪑 Control de Mesas</h4>
@@ -173,6 +221,8 @@ def mesas_view():
 @app.route('/mesa/<int:id>', methods=['GET','POST'])
 def mesa_detalle(id):
     if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_mesas'); 
+    if chk: return chk
     mesa = Mesa.query.get(id); productos = Producto.query.all()
     if request.method=='POST':
         prod = Producto.query.get(int(request.form['producto_id'])); cant = int(request.form['cantidad'])
@@ -199,20 +249,29 @@ def mesa_cobrar(id):
             precio = prod.precio if prod else 0
             v = Venta(cliente=mesa.nombre, producto_nombre=c.producto_nombre, cantidad=c.cantidad, total=precio*c.cantidad, vendedor=session.get('user'))
             db.session.add(v); c.estado='entregado'
+            cli = Cliente.query.filter_by(nombre=mesa.nombre).first()
+            if not cli:
+                cli = Cliente(nombre=mesa.nombre, telefono="", visitas=0, gasto_total=0)
+                db.session.add(cli)
+            cli.visitas+=1; cli.gasto_total+=v.total; cli.ultima_visita=datetime.utcnow()
     mesa.estado='libre'; mesa.total=0; db.session.commit()
     return redirect('/mesas')
 
 @app.route('/cocina')
 def cocina_view():
     if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_cocina'); 
+    if chk: return chk
     comandas = Comanda.query.filter(Comanda.estado=='cocina').order_by(Comanda.fecha.asc()).all()
-    listas = Comanda.query.filter(Comanda.estado=='listo').order_by(Comanda.fecha.desc()).limit(10).all()
+    llevar = PedidoLlevar.query.filter(PedidoLlevar.estado=='cocina').order_by(PedidoLlevar.fecha.asc()).all()
     return render_template_string(STYLE+nav()+"""
-    <div class="container mt-4"><div class="card" style="border-color:#ffcc00"><h3 style="color:#ffcc00">🔥 KDS - Cocina ({{comandas|length}} pendientes)</h3>
-    <div class="row g-3 mt-2">{% for c in comandas %}<div class="col-md-4"><div class="card" style="background:#1a1a0a;border-color:#ff4d3a"><h5>{{c.mesa.nombre}}</h5><h3 style="color:white">{{c.cantidad}}x {{c.producto_nombre}}</h3><small>Mesero: {{c.mesero}} - {{c.fecha.strftime('%H:%M')}}</small><a href="/cocina/listo/{{c.id}}" class="btn-rosa w-100 mt-3" style="background:#25D366">✅ MARCAR LISTO</a></div></div>{% else %}<div class="col-12 text-center p-4"><h4 style="color:#25D366">Todo al día, no hay pedidos 🟢</h4></div>{% endfor %}</div></div>
-    <div class="card mt-4"><h5 style="color:#25D366">✅ Últimos Listos</h5><table class="table table-dark mt-2"><tr><th>Mesa</th><th>Platillo</th><th>Hora</th></tr>{% for c in listas %}<tr><td>{{c.mesa.nombre}}</td><td>{{c.cantidad}}x {{c.producto_nombre}}</td><td>{{c.fecha.strftime('%H:%M')}}</td></tr>{% endfor %}</table></div></div>
-    <script>setTimeout(()=>location.reload(), 15000);</script>
-    """, comandas=comandas, listas=listas)
+    <div class="container mt-4"><div class="card" style="border-color:#ffcc00"><h3 style="color:#ffcc00">🔥 KDS - Cocina ({{comandas|length + llevar|length}} pendientes)</h3>
+    <div class="row g-3 mt-2">
+    {% for c in comandas %}<div class="col-md-4"><div class="card" style="background:#1a1a0a;border-color:#ff4d3a"><h6 style="color:#00e5ff">{{c.mesa.nombre}}</h6><h4 style="color:white">{{c.cantidad}}x {{c.producto_nombre}}</h4><small>Mesero: {{c.mesero}} - {{c.fecha.strftime('%H:%M')}}</small><a href="/cocina/listo/{{c.id}}" class="btn-rosa w-100 mt-3" style="background:#25D366">✅ LISTO</a></div></div>{% endfor %}
+    {% for p in llevar %}<div class="col-md-4"><div class="card" style="background:#1a1500;border-color:#ffaa00"><h6 style="color:#ffaa00">🛵 {{p.tipo|upper}} - {{p.cliente_nombre}}</h6><h4 style="color:white">{{p.cantidad}}x {{p.producto_nombre}}</h4><small>{{p.telefono}} {% if p.direccion %}- {{p.direccion}}{% endif %} - {{p.fecha.strftime('%H:%M')}}</small><a href="/llevar/listo/{{p.id}}" class="btn-rosa w-100 mt-3" style="background:#ffaa00;color:black">✅ LISTO LLEVAR</a></div></div>{% endfor %}
+    {% if not comandas and not llevar %}<div class="col-12 text-center p-4"><h4 style="color:#25D366">Todo al día 🟢</h4></div>{% endif %}
+    </div></div></div><script>setTimeout(()=>location.reload(), 15000);</script>
+    """, comandas=comandas, llevar=llevar)
 
 @app.route('/cocina/listo/<int:id>')
 def cocina_listo(id):
@@ -220,13 +279,99 @@ def cocina_listo(id):
     c = Comanda.query.get(id); c.estado='listo'; db.session.commit()
     return redirect('/cocina')
 
+@app.route('/clientes', methods=['GET','POST'])
+def clientes_view():
+    if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_clientes'); 
+    if chk: return chk
+    if request.method=='POST':
+        nombre=request.form['nombre'].strip(); tel=request.form['telefono'].strip()
+        if not Cliente.query.filter_by(nombre=nombre).first():
+            db.session.add(Cliente(nombre=nombre, telefono=tel, visitas=0, gasto_total=0)); db.session.commit()
+        return redirect('/clientes')
+    clientes=Cliente.query.order_by(Cliente.gasto_total.desc()).all()
+    return render_template_string(STYLE+nav()+"""
+    <div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card"><h5 style="color:#00ffaa">👤 Nuevo Cliente</h5><form method="POST" class="mt-3"><input name="nombre" class="form-control mb-3" placeholder="Nombre" required><input name="telefono" class="form-control mb-3" placeholder="WhatsApp 10 dígitos" required><button class="btn-rosa w-100" style="background:#00ffaa;color:black">Guardar Cliente</button></form></div></div>
+    <div class="col-md-8"><div class="card"><h5>Clientes Frecuentes ({{clientes|length}})</h5><table class="table table-dark table-bordered mt-3"><tr><th>Nombre</th><th>Tel</th><th>Visitas</th><th>Gastado</th><th>Acción</th></tr>
+    {% for c in clientes %}<tr><td>{{c.nombre}}</td><td>{{c.telefono}}</td><td>{{c.visitas}}</td><td>${{c.gasto_total}}</td><td><a href="https://wa.me/52{{c.telefono}}?text={{'Hola '+c.nombre+'! 🐖 Ruve te saluda'}}" target="_blank" class="btn-whats">WA</a></td></tr>{% endfor %}</table></div></div></div></div>
+    """, clientes=clientes)
+
+@app.route('/reservas', methods=['GET','POST'])
+def reservas_view():
+    if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_reservas'); 
+    if chk: return chk
+    mesas=Mesa.query.all()
+    if request.method=='POST':
+        r=Reserva(cliente_nombre=request.form['cliente_nombre'], telefono=request.form['telefono'], fecha=request.form['fecha'], hora=request.form['hora'], personas=int(request.form['personas']), mesa_id=int(request.form['mesa_id']) if request.form['mesa_id'] else None, estado="pendiente")
+        db.session.add(r); db.session.commit(); return redirect('/reservas')
+    reservas=Reserva.query.order_by(Reserva.fecha.desc()).all()
+    return render_template_string(STYLE+nav()+"""
+    <div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card"><h5 style="color:#aa88ff">📅 Nueva Reserva</h5><form method="POST" class="mt-3"><input name="cliente_nombre" class="form-control mb-2" placeholder="Cliente" required list="cli"><datalist id="cli">{% for c in clientes %}<option value="{{c.nombre}}">{% endfor %}</datalist>
+    <input name="telefono" class="form-control mb-2" placeholder="Tel" required><input name="fecha" type="date" class="form-control mb-2" required><input name="hora" type="time" class="form-control mb-2" required><input name="personas" type="number" class="form-control mb-2" placeholder="Personas" required><select name="mesa_id" class="form-control mb-3"><option value="">Mesa automática</option>{% for m in mesas %}<option value="{{m.id}}">{{m.nombre}} ({{m.estado}})</option>{% endfor %}</select><button class="btn-rosa w-100" style="background:#aa88ff;color:black">Guardar Reserva</button></form></div></div>
+    <div class="col-md-8"><div class="card"><h5>Reservas</h5><table class="table table-dark mt-3"><tr><th>Cliente</th><th>Fecha</th><th>Hora</th><th>Pers</th><th>Mesa</th><th>Estado</th></tr>
+    {% for r in reservas %}<tr><td>{{r.cliente_nombre}}<br><small>{{r.telefono}}</small></td><td>{{r.fecha}}</td><td>{{r.hora}}</td><td>{{r.personas}}</td><td>{{r.mesa.nombre if r.mesa else 'Auto'}}</td><td><span style="color:#ffcc00">{{r.estado}}</span> <a href="/reserva/confirmar/{{r.id}}" style="color:#25D366">✓</a> <a href="/reserva/cancelar/{{r.id}}" style="color:red">X</a></td></tr>{% endfor %}</table></div></div></div></div>
+    """, reservas=reservas, mesas=mesas, clientes=Cliente.query.all())
+
+@app.route('/reserva/confirmar/<int:id>')
+def reserva_confirmar(id):
+    r=Reserva.query.get(id); r.estado='confirmada'; db.session.commit(); return redirect('/reservas')
+@app.route('/reserva/cancelar/<int:id>')
+def reserva_cancelar(id):
+    r=Reserva.query.get(id); r.estado='cancelada'; db.session.commit(); return redirect('/reservas')
+
+@app.route('/para_llevar', methods=['GET','POST'])
+def para_llevar_view():
+    if 'user' not in session: return redirect('/')
+    chk=check_mod('mod_llevar'); 
+    if chk: return chk
+    productos=Producto.query.all()
+    if request.method=='POST':
+        prod=Producto.query.get(int(request.form['producto_id'])); cant=int(request.form['cantidad'])
+        total=prod.precio*cant
+        p=PedidoLlevar(cliente_nombre=request.form['cliente_nombre'], telefono=request.form['telefono'], producto_nombre=prod.nombre, cantidad=cant, total=total, tipo=request.form['tipo'], direccion=request.form.get('direccion',''), estado='cocina', vendedor=session.get('user'))
+        prod.stock-=cant
+        db.session.add(p); db.session.commit()
+        cli=Cliente.query.filter_by(nombre=request.form['cliente_nombre']).first()
+        if not cli:
+            cli=Cliente(nombre=request.form['cliente_nombre'], telefono=request.form['telefono'], visitas=0, gasto_total=0)
+            db.session.add(cli)
+        cli.visitas+=1; cli.gasto_total+=total; cli.ultima_visita=datetime.utcnow(); db.session.commit()
+        return redirect('/para_llevar')
+    pedidos=PedidoLlevar.query.order_by(PedidoLlevar.fecha.desc()).limit(30).all()
+    return render_template_string(STYLE+nav()+"""
+    <div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card"><h5 style="color:#ffaa00">🛵 Nuevo Pedido Para Llevar</h5><form method="POST" class="mt-3">
+    <input name="cliente_nombre" class="form-control mb-2" placeholder="Cliente" required list="cli2"><datalist id="cli2">{% for c in clientes %}<option value="{{c.nombre}}">{% endfor %}</datalist>
+    <input name="telefono" class="form-control mb-2" placeholder="Tel WhatsApp" required><select name="producto_id" class="form-control mb-2" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}}</option>{% endfor %}</select>
+    <input name="cantidad" type="number" value="1" min="1" class="form-control mb-2" required><select name="tipo" class="form-control mb-2"><option value="llevar">Cliente recoge</option><option value="domicilio">Envío a domicilio</option></select>
+    <textarea name="direccion" class="form-control mb-3" placeholder="Dirección si es domicilio"></textarea><button class="btn-rosa w-100" style="background:#ffaa00;color:black">🍽️ MANDAR A COCINA</button></form></div></div>
+    <div class="col-md-8"><div class="card"><h5>Pedidos Para Llevar ({{pedidos|length}})</h5><table class="table table-dark mt-3"><tr><th>Cliente</th><th>Pedido</th><th>Tipo</th><th>Estado</th><th>Acción</th></tr>
+    {% for p in pedidos %}<tr><td>{{p.cliente_nombre}}<br><small>{{p.telefono}}</small></td><td>{{p.cantidad}}x {{p.producto_nombre}} - ${{p.total}}</td><td>{{p.tipo}}</td><td style="color:{% if p.estado=='cocina' %}#ff4d3a{% else %}#25D366{% endif %}">{{p.estado}}</td><td>{% if p.estado!='entregado' %}<a href="/llevar/cobrar/{{p.id}}" class="btn-rosa" style="font-size:11px">COBRAR</a>{% endif %}</td></tr>{% endfor %}</table></div></div></div></div>
+    """, productos=productos, pedidos=pedidos, clientes=Cliente.query.all())
+
+@app.route('/llevar/listo/<int:id>')
+def llevar_listo(id):
+    p=PedidoLlevar.query.get(id); p.estado='listo'; db.session.commit(); return redirect('/cocina')
+@app.route('/llevar/cobrar/<int:id>')
+def llevar_cobrar(id):
+    p=PedidoLlevar.query.get(id)
+    v=Venta(cliente=p.cliente_nombre+f" ({p.tipo})", producto_nombre=p.producto_nombre, cantidad=p.cantidad, total=p.total, vendedor=session.get('user'))
+    db.session.add(v); p.estado='entregado'; db.session.commit()
+    return redirect('/para_llevar')
+
 @app.route('/vender', methods=['POST'])
 def vender():
     if 'user' not in session: return redirect('/')
     cfg=get_config(); prod=Producto.query.get(int(request.form['producto_id']))
-    v=Venta(cliente=(request.form.get('cliente') or "Mostrador").strip() or "Mostrador", producto_nombre=prod.nombre, cantidad=int(request.form['cantidad']), total=prod.precio*int(request.form['cantidad']), vendedor=session.get('user'))
+    cliente_nombre=(request.form.get('cliente') or "Mostrador").strip() or "Mostrador"
+    v=Venta(cliente=cliente_nombre, producto_nombre=prod.nombre, cantidad=int(request.form['cantidad']), total=prod.precio*int(request.form['cantidad']), vendedor=session.get('user'))
     prod.stock = prod.stock - v.cantidad
     db.session.add(v); db.session.commit()
+    cli=Cliente.query.filter_by(nombre=cliente_nombre).first()
+    if not cli:
+        cli=Cliente(nombre=cliente_nombre, telefono="", visitas=0, gasto_total=0)
+        db.session.add(cli)
+    cli.visitas+=1; cli.gasto_total+=v.total; cli.ultima_visita=datetime.utcnow(); db.session.commit()
     if cfg.tickets: return redirect(f'/ticket/{v.id}')
     return redirect('/dashboard')
 
@@ -319,14 +464,25 @@ def admin_config():
     cfg=get_config()
     if request.method=='POST':
         cfg.whatsapp_btn = 'whatsapp_btn' in request.form; cfg.tickets = 'tickets' in request.form; cfg.reporte_pdf = 'reporte_pdf' in request.form; cfg.total_whatsapp = 'total_whatsapp' in request.form
+        cfg.mod_mesas = 'mod_mesas' in request.form; cfg.mod_cocina = 'mod_cocina' in request.form; cfg.mod_clientes = 'mod_clientes' in request.form; cfg.mod_reservas = 'mod_reservas' in request.form; cfg.mod_llevar = 'mod_llevar' in request.form
         cfg.numero_whatsapp = request.form.get('numero_whatsapp','').strip() or cfg.numero_whatsapp; db.session.commit(); return redirect('/admin/config')
-    return render_template_string(STYLE+nav()+"""<div class="container mt-4" style="max-width:600px"><div class="card"><h4 style="color:#ff4d8a">⚙️ Configuración Admin</h4><form method="POST" class="mt-4">
-    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:15px;margin-bottom:15px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="whatsapp_btn" style="width:28px;height:28px;accent-color:#ff4d8a" {{'checked' if cfg.whatsapp_btn}}><span style="margin-left:15px"><b>📲 1. Botón WhatsApp</b></span></label>
-    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:15px;margin-bottom:15px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="tickets" style="width:28px;height:28px;accent-color:#ff4d8a" {{'checked' if cfg.tickets}}><span style="margin-left:15px"><b>🎫 2. Tickets</b></span></label>
-    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:15px;margin-bottom:15px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="reporte_pdf" style="width:28px;height:28px;accent-color:#ff4d8a" {{'checked' if cfg.reporte_pdf}}><span style="margin-left:15px"><b>📄 3. Reporte PDF</b></span></label>
-    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:15px;margin-bottom:15px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="total_whatsapp" style="width:28px;height:28px;accent-color:#ff4d8a" {{'checked' if cfg.total_whatsapp}}><span style="margin-left:15px"><b>💰 4. Total a mi WhatsApp</b></span></label>
+    return render_template_string(STYLE+nav()+"""<div class="container mt-4" style="max-width:700px"><div class="card"><h4 style="color:#ff4d8a">⚙️ Configuración Admin</h4>
+    <h6 class="mt-4" style="color:#aaa">FUNCIONES GENERALES</h6>
+    <form method="POST" class="mt-2">
+    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="whatsapp_btn" style="width:24px;height:24px;accent-color:#ff4d8a" {{'checked' if cfg.whatsapp_btn}}><span style="margin-left:12px"><b>📲 Botón WhatsApp</b></span></label>
+    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="tickets" style="width:24px;height:24px;accent-color:#ff4d8a" {{'checked' if cfg.tickets}}><span style="margin-left:12px"><b>🎫 Tickets</b></span></label>
+    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="reporte_pdf" style="width:24px;height:24px;accent-color:#ff4d8a" {{'checked' if cfg.reporte_pdf}}><span style="margin-left:12px"><b>📄 Reporte PDF</b></span></label>
+    <label style="display:flex;align-items:center;border:2px solid #333;border-radius:12px;padding:12px;margin-bottom:15px;cursor:pointer;background:#0a0a0a"><input type="checkbox" name="total_whatsapp" style="width:24px;height:24px;accent-color:#ff4d8a" {{'checked' if cfg.total_whatsapp}}><span style="margin-left:12px"><b>💰 Total a mi WhatsApp</b></span></label>
+    
+    <h6 class="mt-4" style="color:#00e5ff">MÓDULOS FASE 2 y 3 - Prender / Apagar</h6>
+    <label style="display:flex;align-items:center;border:2px solid #00e5ff;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#001a1a"><input type="checkbox" name="mod_mesas" style="width:28px;height:28px;accent-color:#00e5ff" {{'checked' if cfg.mod_mesas}}><span style="margin-left:12px"><b>🪑 Mesas</b> - Control de mesas del restaurante</span></label>
+    <label style="display:flex;align-items:center;border:2px solid #ffcc00;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#1a1a00"><input type="checkbox" name="mod_cocina" style="width:28px;height:28px;accent-color:#ffcc00" {{'checked' if cfg.mod_cocina}}><span style="margin-left:12px"><b>🔥 Cocina KDS</b> - Pantalla de cocina</span></label>
+    <label style="display:flex;align-items:center;border:2px solid #00ffaa;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#001a0f"><input type="checkbox" name="mod_clientes" style="width:28px;height:28px;accent-color:#00ffaa" {{'checked' if cfg.mod_clientes}}><span style="margin-left:12px"><b>👤 Clientes</b> - Base de clientes frecuentes</span></label>
+    <label style="display:flex;align-items:center;border:2px solid #aa88ff;border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer;background:#0f0a1a"><input type="checkbox" name="mod_reservas" style="width:28px;height:28px;accent-color:#aa88ff" {{'checked' if cfg.mod_reservas}}><span style="margin-left:12px"><b>📅 Reservas</b> - Apartado de mesas</span></label>
+    <label style="display:flex;align-items:center;border:2px solid #ffaa00;border-radius:12px;padding:12px;margin-bottom:20px;cursor:pointer;background:#1a1000"><input type="checkbox" name="mod_llevar" style="width:28px;height:28px;accent-color:#ffaa00" {{'checked' if cfg.mod_llevar}}><span style="margin-left:12px"><b>🛵 Para Llevar</b> - Pedidos domicilio / recoger</span></label>
+
     <div class="mb-4"><label style="color:#ff4d8a">Tu número WhatsApp:</label><input name="numero_whatsapp" class="form-control mt-2" value="{{cfg.numero_whatsapp}}"></div>
-    <button class="btn-rosa w-100" style="padding:14px">💾 GUARDAR</button></form></div></div>""", cfg=cfg)
+    <button class="btn-rosa w-100" style="padding:14px">💾 GUARDAR CONFIGURACIÓN</button></form></div></div>""", cfg=cfg)
 
 @app.route('/admin/usuarios', methods=['GET','POST'])
 def admin_usuarios():
