@@ -7,7 +7,12 @@ import os, urllib.parse, io
 
 app = Flask(__name__)
 app.secret_key = 'lechon-ruve-2026-final'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///lechon.db'
+
+# --- BASE DE DATOS PERMANENTE (PostgreSQL si existe, si no SQLite local) ---
+db_url = os.environ.get('DATABASE_URL', 'sqlite:///lechon.db')
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -87,10 +92,7 @@ def dashboard():
     if 'user' not in session: return redirect('/')
     cfg=get_config(); productos=Producto.query.all()
     hoy=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
-    
-    # FILTRO: Empleado solo ve lo suyo
     if session.get('is_admin'):
-        ventas_q = Venta.query
         ventas = Venta.query.order_by(Venta.id.desc()).limit(12).all()
         total_hoy = sum([v.total for v in Venta.query.filter(Venta.fecha>=hoy).all()])
         num_ventas = Venta.query.count()
@@ -102,7 +104,7 @@ def dashboard():
 
     html=STYLE+nav()+"""<div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card text-center"><h6>{% if is_admin %}Ventas Hoy (Todos){% else %}Mis Ventas Hoy{% endif %}</h6><h2 style="color:#ff4d8a">${{total_hoy}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>Productos</h6><h2 style="color:#ff4d8a">{{num_prod}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>{% if is_admin %}Tickets Totales{% else %}Mis Tickets{% endif %}</h6><h2 style="color:#ff4d8a">{{num_ventas}}</h2></div></div></div>
     <div class="card mt-4"><h5 style="color:#ff4d8a">Vender Rápido - Chetumal ({{session.get('user')}})</h5>
-    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente"></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} ({{p.stock}})</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
+    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente"></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} (Stock: {{p.stock}}) {% if p.stock <= 3 %}⚠️ BAJO{% endif %}</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
     <div class="card mt-4"><h5>{% if is_admin %}Últimas Ventas (Todos){% else %}Mis Últimas Ventas{% endif %}</h5><table class="table table-dark table-bordered mt-3"><tr><th>Cliente</th><th>Producto</th><th>Total</th>{% if is_admin %}<th>Vendedor</th>{% endif %}<th>Acciones</th></tr>
     {% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td>{% if is_admin %}<td>{{v.vendedor}}</td>{% endif %}<td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px">TICKET</a>{% endif %}{% if cfg.whatsapp_btn %}<a href="https://wa.me/?text={{v.msj}}" target="_blank" class="btn-whats ms-1">WA</a>{% endif %}</td></tr>{% endfor %}</table></div></div>"""
     for v in ventas: v.msj=make_whats_msg(v)
@@ -112,8 +114,9 @@ def dashboard():
 def vender():
     if 'user' not in session: return redirect('/')
     cfg=get_config(); prod=Producto.query.get(int(request.form['producto_id']))
+    # Stock NO obligatorio: descuenta aunque quede en negativo
     v=Venta(cliente=(request.form.get('cliente') or "Mostrador").strip() or "Mostrador", producto_nombre=prod.nombre, cantidad=int(request.form['cantidad']), total=prod.precio*int(request.form['cantidad']), vendedor=session.get('user'))
-    if prod.stock>=v.cantidad: prod.stock-=v.cantidad
+    prod.stock = prod.stock - v.cantidad
     db.session.add(v); db.session.commit()
     if cfg.tickets: return redirect(f'/ticket/{v.id}')
     return redirect('/dashboard')
@@ -124,7 +127,6 @@ def ticket(id):
     cfg=get_config()
     if not cfg.tickets: return redirect('/dashboard')
     v=Venta.query.get(id)
-    # Seguridad: empleado solo puede ver su propio ticket
     if not session.get('is_admin') and v.vendedor != session.get('user'):
         return redirect('/dashboard')
     msj=make_whats_msg(v)
@@ -136,7 +138,9 @@ def productos_route():
     if not session.get('is_admin'): return redirect('/dashboard')
     if request.method=='POST':
         db.session.add(Producto(nombre=request.form['nombre'], precio=float(request.form['precio']), stock=int(request.form['stock']))); db.session.commit(); return redirect('/productos')
-    return render_template_string(STYLE+nav()+'<div class="container mt-4"><div class="card"><h5>Productos (Solo Admin)</h5><form method="POST" class="row g-2 mt-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form><table class="table table-dark table-bordered mt-4"><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td>{{p.nombre}}</td><td>${{p.precio}}</td><td>{{p.stock}}</td><td><a href="/eliminar_producto/{{p.id}}" style="color:red">Eliminar</a></td></tr>{% endfor %}</table></div></div>', productos=Producto.query.all())
+    return render_template_string(STYLE+nav()+"""<div class="container mt-4"><div class="card"><h5>Productos (Solo Admin)</h5><form method="POST" class="row g-2 mt-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form>
+    <table class="table table-dark table-bordered mt-4"><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>
+    {% for p in productos %}<tr><td>{{p.nombre}}</td><td>${{p.precio}}</td><td style="{% if p.stock <= 3 %}color:#ffcc00;font-weight:bold{% endif %}">{{p.stock}} {% if p.stock <= 3 %}⚠️ BAJO{% endif %}</td><td><a href="/eliminar_producto/{{p.id}}" style="color:red">Eliminar</a></td></tr>{% endfor %}</table></div></div>""", productos=Producto.query.all())
 
 @app.route('/eliminar_producto/<int:id>')
 def eliminar_producto(id):
@@ -168,7 +172,6 @@ def reporte():
         ventas_hoy=Venta.query.filter(Venta.fecha>=hoy).order_by(Venta.fecha.desc()).all()
     else:
         ventas_hoy=Venta.query.filter(Venta.fecha>=hoy, Venta.vendedor==session.get('user')).order_by(Venta.fecha.desc()).all()
-    
     total_hoy=sum([v.total for v in ventas_hoy])
     por_vendedor=defaultdict(list)
     for v in ventas_hoy: por_vendedor[v.vendedor].append(v)
@@ -187,7 +190,7 @@ def reporte():
     {% if cfg.total_whatsapp and is_admin %}<a href="https://wa.me/{{cfg.numero_whatsapp}}?text={{msg_enc}}" target="_blank" class="btn-whats p-2">📲 Mandar CIERRE a mi WhatsApp</a>{% endif %}
     </div></div>
     {% if is_admin %}
-    <div class="card mt-4" style="border-color:#ffcc00"><h5 style="color:#ffcc00">💰 CIERRE DE CAJA POR VENDEDOR - HOY (Solo Admin ve esto)</h5>
+    <div class="card mt-4" style="border-color:#ffcc00"><h5 style="color:#ffcc00">💰 CIERRE DE CAJA POR VENDEDOR - HOY (Solo Admin)</h5>
     <div class="row mt-3">{% for c in cierre %}<div class="col-md-4 mb-3"><div class="card" style="border-color:#ffcc00;background:#1a1a0a"><h6 style="color:#ffcc00">{{c.vendedor}}</h6><h3>${{c.total}}</h3><small>{{c.cantidad}} ventas</small></div></div>{% endfor %}</div>
     {% if not cierre %}<p style="color:#666">Aún no hay ventas hoy</p>{% endif %}
     </div>
@@ -211,7 +214,7 @@ def reporte_pdf():
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import letter
     buffer=io.BytesIO(); c=canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica-Bold", 16); c.drawString(50,750,f"RUVE - {'REPORTE COMPLETO' if session.get('is_admin') else 'MI REPORTE'} - {session.get('user')}")
+    c.setFont("Helvetica-Bold", 16); c.drawString(50,750,f"RUVE - {'COMPLETO' if session.get('is_admin') else 'MI REPORTE'} - {session.get('user')}")
     c.setFont("Helvetica", 12); c.drawString(50,730,f"Fecha: {datetime.now().strftime('%d/%m/%Y')} - Total: ${total} - Ventas: {len(ventas)}")
     y=700
     for v in ventas:
