@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import os
 
 app = Flask(__name__)
-app.secret_key = 'ruve-final-editar-articulo-completo'
+app.secret_key = 'ruve-final-quitar-pedido-cocina'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -438,15 +438,24 @@ def mesa_detalle(id):
     mesa=Mesa.query.get(id); productos=Producto.query.filter_by(disponible=True).all()
     productos_list=[]
     for p in productos:
-        try:
-            productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
+        try: productos_list.append({'id':p.id,'nombre':p.nombre,'precio_mxn':format_mxn(p.precio or 0),'img_url':get_producto_imagen(p)})
         except: continue
     carrito=session.get(f'mesa_carrito_{id}',[]); total_nuevo=sum([x['precio']*x['cant'] for x in carrito]); comandas=[c for c in mesa.comandas if c.estado!='entregado']
     return render_template_string(STYLE_BASE+nav()+"""
 <div style="display:flex;height:calc(100vh - 60px);gap:10px;padding:10px">
 <div style="width:45%;background:#111;border:2px solid #00e5ff;border-radius:12px;padding:10px;overflow:auto;display:flex;flex-direction:column">
-<h6 style="color:#00e5ff">{{mesa.nombre}} - {{mesa.total_mxn}}</h6>
-<div style="flex:1;overflow:auto">{% for c in comandas %}<div style="background:white;color:black;padding:6px;border-radius:6px;margin-bottom:5px;font-size:12px"><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}</div>{% endfor %}<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES</b>{% for it in carrito %}<div style="background:#fffde7;color:black;padding:5px;border-radius:4px;margin-top:5px;font-size:12px">{{it.nombre}} x{{it.cant}} - {{it.total_mxn}}<form action="/mesa/{{mesa.id}}/carrito/coment/{{loop.index0}}" method="POST" style="display:flex;gap:3px"><input name="comentario" value="{{it.comentario}}" class="form-control" style="font-size:11px" placeholder="💬 Comentario"><button>💾</button></form></div>{% endfor %}</div>
+<h6 style="color:#00e5ff">{{mesa.nombre}} - {{mesa.total_mxn}} - <small style="color:#ffcc00">Editar pedido permitido</small></h6>
+<div style="flex:1;overflow:auto">
+{% for c in comandas %}
+<div style="background:white;color:black;padding:8px;border-radius:8px;margin-bottom:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
+<div><b>{{c.cantidad}}x {{c.producto_nombre}}</b> {% if c.comentario %}<span style="background:#c62828;color:white;padding:2px 4px;border-radius:4px">💬 {{c.comentario}}</span>{% endif %}<br><small style="color:#888">{{c.estado}} - {{c.fecha.strftime('%H:%M')}} - {{c.mesero_nombre}}</small></div>
+<a href="/mesa/{{mesa.id}}/comanda/eliminar/{{c.id}}" onclick="return confirm('¿Quitar {{c.producto_nombre}} del pedido? Si ya se mandó a cocina se eliminará igual.')" style="background:var(--rosa);color:white;padding:6px 10px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:12px">✕ Quitar</a>
+</div>
+{% endfor %}
+{% if not comandas %}<p style="color:#888;font-size:12px;text-align:center;margin-top:10px">Sin productos en cocina</p>{% endif %}
+<hr><b style="color:#ffcc00;font-size:12px">Nuevo - Comentario ANTES de mandar</b>
+{% for it in carrito %}<div style="background:#fffde7;color:black;padding:5px;border-radius:4px;margin-top:5px;font-size:12px;display:flex;justify-content:space-between"><span>{{it.nombre}} x{{it.cant}} - {{it.total_mxn}}</span><a href="/mesa/{{mesa.id}}/carrito/eliminar/{{loop.index0}}" style="color:var(--rosa);font-weight:bold">✕</a></div><form action="/mesa/{{mesa.id}}/carrito/coment/{{loop.index0}}" method="POST" style="display:flex;gap:3px;margin-top:3px"><input name="comentario" value="{{it.comentario}}" class="form-control" style="font-size:11px" placeholder="💬 Comentario"><button style="background:var(--rosa);color:white;border:none;border-radius:4px;padding:4px 8px">💾</button></form>{% endfor %}
+</div>
 <div style="border-top:2px solid var(--rosa);padding-top:10px"><b>Total Final {{total_final_mxn}}</b><br><a href="/mesa/{{mesa.id}}/enviar" style="background:#00e5ff;color:black;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">MANDAR A COCINA</a><a href="/mesa/{{mesa.id}}/cobrar" style="background:#25D366;color:white;padding:8px;display:block;text-align:center;border-radius:6px;margin-top:5px">💰 COBRAR MESA</a></div>
 </div>
 <div style="width:55%;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;overflow:auto">{% for p in productos %}<div style="background:white;color:#333;border-radius:8px;padding:6px;text-align:center;cursor:pointer" onclick="location='/mesa/{{mesa.id}}/add/{{p.id}}'"><img src="{{p.img_url}}" style="width:60px;height:60px;object-fit:cover;border-radius:6px"><br><small>{{p.nombre}}</small><br><small style="color:var(--rosa);font-weight:bold">{{p.precio_mxn}}</small></div>{% endfor %}</div>
@@ -457,21 +466,51 @@ def mesa_detalle(id):
 def mesa_add(mesa_id, prod_id):
     prod=Producto.query.get(prod_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[])
     carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'cant':1,'comentario':''}); session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True; return redirect(f'/mesa/{mesa_id}')
+
 @app.route('/mesa/<int:mesa_id>/carrito/coment/<int:index>', methods=['POST'])
 def mesa_carrito_coment(mesa_id,index):
     carrito=session.get(f'mesa_carrito_{mesa_id}',[]);
     if 0 <= index < len(carrito): carrito[index]['comentario']=request.form.get('comentario','')[:200]; session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True
     return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/carrito/eliminar/<int:index>')
+def mesa_carrito_eliminar(mesa_id,index):
+    carrito=session.get(f'mesa_carrito_{mesa_id}',[]);
+    if 0 <= index < len(carrito):
+        carrito.pop(index); session[f'mesa_carrito_{mesa_id}']=carrito; session.modified=True
+    return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/comanda/eliminar/<int:comanda_id>')
+def mesa_comanda_eliminar(mesa_id, comanda_id):
+    mesa=Mesa.query.get(mesa_id)
+    com=Comanda.query.get(comanda_id)
+    if not mesa or not com: return redirect(f'/mesa/{mesa_id}')
+    try:
+        prod=Producto.query.filter_by(nombre=com.producto_nombre).first()
+        precio=prod.precio if prod else 0
+        mesa.total = max(0, (mesa.total or 0) - (precio * (com.cantidad or 1)))
+    except: pass
+    db.session.delete(com)
+    db.session.commit()
+    # Si no quedan comandas y total 0, liberar mesa
+    restantes = [c for c in mesa.comandas if c.estado!='entregado']
+    if len(restantes)==0 and (mesa.total or 0)<=0:
+        mesa.estado='libre'; mesa.total=0; db.session.commit()
+        return redirect('/mesas')
+    return redirect(f'/mesa/{mesa_id}')
+
 @app.route('/mesa/<int:mesa_id>/enviar')
 def mesa_enviar(mesa_id):
     mesa=Mesa.query.get(mesa_id); carrito=session.get(f'mesa_carrito_{mesa_id}',[]); mesero=session.get('user'); mesero_nombre=session.get('nombre_completo','')
     for it in carrito:
         com=Comanda(mesa_id=mesa.id,producto_nombre=it['nombre'],cantidad=it['cant'],mesero=mesero,mesero_nombre=mesero_nombre,estado='cocina',comentario=it.get('comentario','')); mesa.total=(mesa.total or 0)+it['precio']*it['cant']; mesa.estado='ocupada'; db.session.add(com)
     db.session.commit(); session[f'mesa_carrito_{mesa_id}']=[]; session.modified=True; return redirect(f'/mesa/{mesa_id}')
+
 @app.route('/mesa/<int:id>/cobrar')
 def mesa_cobrar_view(id):
     mesa=Mesa.query.get(id); total=mesa.total or 0
     return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4" style="max-width:500px"><div class="card" style="border-color:#25D366"><h4>💰 Cobrar {{mesa.nombre}} - {{total_mxn}}</h4><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:15px"><a href="/mesa/{{mesa.id}}/cobrar_final/efectivo" style="background:#25D366;color:white;padding:20px;text-align:center;border-radius:8px">💵<br>Efectivo</a><a href="/mesa/{{mesa.id}}/cobrar_final/tarjeta" style="background:#3f51b5;color:white;padding:20px;text-align:center;border-radius:8px">💳<br>Tarjeta</a><a href="/mesa/{{mesa.id}}/cobrar_final/transferencia" style="background:#0097a7;color:white;padding:20px;text-align:center;border-radius:8px">🏦<br>Transfer</a></div></div></div>""", mesa=mesa, total_mxn=format_mxn(total))
+
 @app.route('/mesa/<int:id>/cobrar_final/<metodo>')
 def mesa_cobrar_final(id,metodo):
     mesa=Mesa.query.get(id); vendedor=session.get('user'); vendedor_nombre=session.get('nombre_completo','')
@@ -533,9 +572,7 @@ def productos_nuevo():
             <div class="row" style="margin-top:15px"><div class="col-md-4"><label class="crear-label">REF</label><input name="ref" class="crear-input" placeholder="10028"></div><div class="col-md-4"><label class="crear-label">Código de barras</label><input name="codigo_barras" class="crear-input" placeholder=""></div><div class="col-md-4"><label class="crear-label">Stock</label><input name="stock" type="number" class="crear-input" value="0"></div></div>
             <div style="margin-top:20px"><label class="crear-label">Foto (visible para TODOS)</label><input name="imagen" type="file" class="form-control" accept="image/*" style="background:#111!important;color:white!important;border:1px solid #444!important;margin-top:5px"></div>
             <div style="margin-top:25px;display:flex;gap:10px"><button style="background:var(--rosa);color:white;border:none;padding:12px 30px;border-radius:6px;font-weight:bold">💾 GUARDAR ARTÍCULO</button><a href="/productos" style="background:#222;color:white;padding:12px 20px;border-radius:6px;text-decoration:none">Cancelar</a></div></div></form></div>
-<script>
-function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}
-</script>
+<script>function nuevaCategoria(){let nombre=prompt("Nombre nueva categoría:");if(!nombre) return;fetch('/api/categorias/crear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:nombre})}).then(r=>r.json()).then(d=>{if(d.ok){let sel=document.getElementById('catSelect');let opt=document.createElement('option');opt.value=d.nombre;opt.text=d.nombre;opt.selected=true;sel.add(opt);}else alert("Ya existe");})}</script>
 """, categorias=categorias)
 
 @app.route('/productos/editar/<int:id>', methods=['GET','POST'])
@@ -609,7 +646,7 @@ function cargarGrafica(){
     document.getElementById('totalGanancia').innerText='$'+(data.total_ventas-data.total_gastos).toFixed(2)+' MXN';
     let ctx=document.getElementById('graficaVentasGastos').getContext('2d');
     if(chart) chart.destroy();
-    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.1)',tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.1)',tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
+    chart=new Chart(ctx,{type:'line',data:{labels:data.labels,datasets:[{label:'Ventas MXN',data:data.ventas,borderColor:'#25D366',backgroundColor:'rgba(37,211,102,0.2)',fill:true,tension:0.3},{label:'Gastos MXN',data:data.gastos,borderColor:'#ff4d8a',backgroundColor:'rgba(255,77,138,0.2)',fill:true,tension:0.3}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}});
   });
 }
 document.getElementById('formGasto').addEventListener('submit',function(e){e.preventDefault();fetch('/api/gasto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({concepto:document.getElementById('concepto').value,monto:document.getElementById('monto').value})}).then(()=>{document.getElementById('concepto').value='';document.getElementById('monto').value='';cargarGrafica();});});
