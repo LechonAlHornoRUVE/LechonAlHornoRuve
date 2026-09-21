@@ -6,7 +6,7 @@ from collections import defaultdict
 import os, urllib.parse, io
 
 app = Flask(__name__)
-app.secret_key = 'ruve-final-mesas-foto-pos-espanol'
+app.secret_key = 'ruve-mesero-edita-ticket'
 
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///lechon.db')
 if db_url.startswith("postgres://"):
@@ -146,7 +146,6 @@ input,select{background:#222!important;color:white!important;border:1px solid #f
 textarea{background:#222!important;color:white!important;border:1px solid #ff4d8a!important}
 a{color:#ff4d8a;text-decoration:none}
 @media print{.no-print{display:none} body{background:white;color:black}}
-/* POS */
 .pos-container{display:flex;height:calc(100vh - 70px);gap:10px;padding:10px}
 .pos-left{width:38%;background:#0f0f0f;border:2px solid #ff4d8a;border-radius:15px;display:flex;flex-direction:column}
 .pos-center{width:12%;display:flex;flex-direction:column;gap:8px}
@@ -204,6 +203,12 @@ def get_categoria(nombre):
     if 'orden' in n: return 'ordenes'
     if 'refresco' in n or 'coca' in n or 'bebida' in n or 'agua' in n: return 'bebidas'
     return 'extras'
+def get_mesa_carrito(mesa_id):
+    key = f'mesa_carrito_{mesa_id}'
+    return session.get(key, [])
+def set_mesa_carrito(mesa_id, carrito):
+    key = f'mesa_carrito_{mesa_id}'
+    session[key]=carrito
 
 @app.route('/', methods=['GET','POST'])
 def login():
@@ -250,7 +255,6 @@ def dashboard():
         </div>
         <div class="ticket-body">
             <div style="display:flex;justify-content:space-between;font-weight:bold;border-bottom:2px solid black;padding-bottom:5px;font-size:11px"><span style="width:5%">#</span><span style="width:40%">Artículo</span><span style="width:15%">Precio</span><span style="width:20%">Cant</span><span style="width:15%">Total</span><span style="width:5%">X</span></div>
-            <div id="ticketItems">
             {% for item in carrito %}
                 <div class="ticket-row">
                     <span style="width:5%;color:green">{{loop.index}}</span>
@@ -266,14 +270,10 @@ def dashboard():
                 </div>
             {% endfor %}
             {% if not carrito %}<p style="color:#888;text-align:center;margin-top:30px">Toca un producto a la derecha para agregar al ticket</p>{% endif %}
-            </div>
         </div>
         <div class="ticket-footer">
             <div style="color:#aaa;font-size:12px">
                 <div style="display:flex;justify-content:space-between"><span>Total</span><span>${{total}}</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Descuento</span><span>$0</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Sub Total</span><span>${{total}}</span></div>
-                <div style="display:flex;justify-content:space-between"><span>Impuesto</span><span>$0</span></div>
                 <hr style="border-color:#ff4d8a">
                 <div style="display:flex;justify-content:space-between;font-weight:bold;color:white;font-size:18px"><span>Total a Pagar</span><span>${{total}}</span></div>
             </div>
@@ -281,8 +281,7 @@ def dashboard():
                 <button onclick="pagar('efectivo')" class="btn-cash">💵 Venta Efectivo</button>
                 <button onclick="pagar('tarjeta')" class="btn-pay">💳 Cobrar</button>
             </div>
-            <button onclick="window.location='/pos/clear'" class="btn-suspend">🗑️ Suspender / Limpiar Ticket</button>
-            <div class="mt-2" style="font-size:10px;color:#666">Hoy: ${{total_hoy}} - {{ventas|length}} tickets</div>
+            <button onclick="window.location='/pos/clear'" class="btn-suspend">🗑️ Limpiar Ticket</button>
         </div>
     </div>
     <div class="pos-center">
@@ -298,14 +297,12 @@ def dashboard():
         </div>
     </div>
     <div class="pos-right">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px"><small style="color:#aaa">Buscar producto...</small><small style="color:#aaa">Toca para agregar al ticket</small></div>
         <div class="prod-grid" id="prodGrid">
             {% for p in productos %}
             <div class="prod-card" data-cat="{{p.categoria}}" onclick="window.location='/pos/add/{{p.id}}'">
                 <img src="/static/logo.png?v=ruve3" alt="{{p.nombre}}">
                 <h6>{{p.nombre}}</h6>
                 <small>${{p.precio}} | Stock {{p.stock}}</small>
-                {% if p.stock <= 3 %}<div style="color:#ffcc00;font-size:10px">⚠️ BAJO STOCK</div>{% endif %}
             </div>
             {% endfor %}
         </div>
@@ -380,18 +377,6 @@ def pos_pagar():
         cli.visitas+=1; cli.gasto_total+=v.total; cli.ultima_visita=datetime.utcnow()
     db.session.commit(); session['carrito']=[]; session['cliente_actual']=cliente
     return jsonify({'ok':True,'ticket_id':last_ticket_id})
-@app.route('/vender_directo', methods=['POST'])
-def vender_directo():
-    if 'user' not in session: return redirect('/')
-    prod=Producto.query.get(int(request.form['producto_id']))
-    cliente=(request.form.get('cliente') or "Mostrador").strip() or "Mostrador"
-    cant=int(request.form.get('cantidad',1))
-    costo=(prod.costo or 0)*cant
-    v=Venta(cliente=cliente, producto_nombre=prod.nombre, cantidad=cant, total=prod.precio*cant, vendedor=session.get('user'), costo_total=costo)
-    prod.stock-=cant; db.session.add(v); db.session.commit()
-    cfg=get_config()
-    if cfg.tickets: return redirect(f'/ticket/{v.id}')
-    return redirect('/dashboard')
 @app.route('/eliminar_venta/<int:id>')
 def eliminar_venta(id):
     if 'user' not in session: return redirect('/')
@@ -403,7 +388,7 @@ def eliminar_venta(id):
         db.session.delete(v); db.session.commit()
     return redirect(request.referrer or '/ventas')
 
-# --- MESAS CON DISEÑO FOTO ---
+# --- MESAS VISUAL FOTO + MESERO EDITABLE ---
 @app.route('/mesas')
 def mesas_view():
     if 'user' not in session: return redirect('/')
@@ -420,7 +405,6 @@ def mesas_view():
         else:
             m.estado_label = 'Cerrada'
             m.estado_class = 'cerrada'
-
     return render_template_string(STYLE_BASE+nav()+"""
 <style>
 .mesas-wrapper{background:#f5f6f8;min-height:calc(100vh - 70px);padding:0;display:flex}
@@ -428,11 +412,10 @@ def mesas_view():
 .mesas-header-top{background:#1e8a3d;padding:8px 12px;display:flex;gap:8px;align-items:center;color:white;flex-wrap:wrap}
 .mesas-areas{background:white;padding:10px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #e0e0e0;flex-wrap:wrap}
 .area-pill{padding:6px 14px;border-radius:20px;border:1px solid #ddd;background:white;font-size:12px;cursor:pointer;color:#333}
-.area-pill.active{background:#0f2b0f;color:white;border-color:#0f2b0f}
 .area-pill.vip{background:#0f2b0f;color:white}
 .mesas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:14px;padding:14px}
 .mesa-card{border-radius:12px;padding:10px;cursor:pointer;min-height:145px;display:flex;flex-direction:column;justify-content:space-between;transition:0.15s;border:2px solid;box-shadow:0 2px 6px rgba(0,0,0,0.08)}
-.mesa-card:hover{transform:translateY(-3px);box-shadow:0 6px 12px rgba(0,0,0,0.15)}
+.mesa-card:hover{transform:translateY(-3px)}
 .mesa-card.disponible{background:#e8f5e9;border-color:#2e7d32}
 .mesa-card.ocupada{background:#fde8e8;border-color:#c62828}
 .mesa-card.cerrada{background:#fff3e0;border-color:#ef6c00}
@@ -442,11 +425,10 @@ def mesas_view():
 .badge-estado.ocupada{background:#c62828}
 .badge-estado.cerrada{background:#ef6c00}
 .mesa-icon-wrap{display:flex;justify-content:center;margin:10px 0}
-.mesa-icon-circle{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;color:white}
-.mesa-card.disponible.mesa-icon-circle{background:#2e7d32}
+.mesa-icon-circle{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;color:white;background:#2e7d32}
 .mesa-card.ocupada.mesa-icon-circle{background:#c62828}
 .mesa-card.cerrada.mesa-icon-circle{background:#ef6c00}
-.mesa-bottom{background:white;border-radius:8px;padding:5px 6px;text-align:center;font-size:11px;color:#333;display:flex;align-items:center;justify-content:center;gap:4px;min-height:26px}
+.mesa-bottom{background:white;border-radius:8px;padding:5px 6px;text-align:center;font-size:11px;color:#333;display:flex;align-items:center;justify-content:center;min-height:26px}
 .venta-rapida-bar{width:62px;background:#1e8a3d;color:white;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;font-weight:bold;letter-spacing:3px;font-size:16px;cursor:pointer}
 </style>
 <div class="mesas-wrapper">
@@ -455,74 +437,219 @@ def mesas_view():
             <span style="background:rgba(255,255,255,0.2);padding:5px 10px;border-radius:20px;font-size:12px">🕘 {{hora}}</span>
             <span style="background:#ff6f00;padding:5px 12px;border-radius:20px;font-size:12px">🪑 Salones ✓</span>
             <span style="background:#1565c0;padding:5px 12px;border-radius:20px;font-size:12px">🚚 Delivery</span>
-            <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+            <span style="margin-left:auto;display:flex;gap:6px">
                 <span style="background:white;color:#1e8a3d;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:bold">⊕ Nueva</span>
                 <span style="background:#5c6bc0;padding:5px 12px;border-radius:20px;font-size:12px">📋 Menus</span>
                 <span style="background:rgba(255,255,255,0.2);padding:5px 12px;border-radius:20px;font-size:12px">💾 Guardar</span>
-                <span style="background:rgba(255,255,255,0.2);padding:5px 12px;border-radius:20px;font-size:12px">🖨️ Imprimir</span>
-                <span style="background:rgba(255,255,255,0.2);padding:5px 12px;border-radius:20px;font-size:12px">🧾 Facturar</span>
             </span>
         </div>
         <div class="mesas-areas">
             <span style="background:#e8f5e9;padding:5px 10px;border-radius:6px;font-size:12px;color:#2e7d32;font-weight:bold">📍 Areas</span>
             <span class="area-pill vip">★ VIP</span>
             <span class="area-pill">☕ Sofietje Lobby</span>
-            <span class="area-pill active">🏷️ GENERAL ({{mesas|length}})</span>
-            <span style="margin-left:auto;font-size:12px;color:#666">Ruve - Chetumal</span>
+            <span class="area-pill" style="background:#0f2b0f;color:white">🏷️ GENERAL ({{mesas|length}})</span>
         </div>
         <div class="mesas-grid">
             {% for m in mesas %}
             <div class="mesa-card {{m.estado_class}}" onclick="window.location='/mesa/{{m.id}}'">
-                <div class="mesa-top">
-                    <span>{{m.nombre}}</span>
-                    <span class="badge-estado {{m.estado_class}}">{{m.estado_label}}</span>
-                </div>
-                <div style="font-size:10px;color:#777;margin-top:3px">
-                    {% if m.estado_class == 'ocupada' %}•••• {% if m.total %}${{m.total}}{% endif %}{% else %}••• Libre{% endif %}
-                </div>
-                <div class="mesa-icon-wrap">
-                    <div class="mesa-icon-circle">
-                        {% if m.estado_class == 'ocupada' %}🍴{% elif m.estado_class == 'cerrada' %}🔒{% else %}🪑{% endif %}
-                    </div>
-                </div>
-                <div class="mesa-bottom">
-                    {% if m.estado_class == 'ocupada' %}
-                        👤 {{m.comandas[0].mesero if m.comandas and m.comandas[0].mesero else 'Mesero'}} {% if m.total %}- ${{m.total}}{% endif %}
-                    {% elif m.estado_class == 'cerrada' %}
-                        👤 Cerrada
-                    {% else %}
-                        👤 {{m.comandas|selectattr('estado','ne','entregado')|list|length}} - Libre
-                    {% endif %}
-                </div>
+                <div class="mesa-top"><span>{{m.nombre}}</span><span class="badge-estado {{m.estado_class}}">{{m.estado_label}}</span></div>
+                <div style="font-size:10px;color:#777;margin-top:3px">{% if m.estado_class == 'ocupada' %}•••• ${{m.total}}{% else %}••• Libre{% endif %}</div>
+                <div class="mesa-icon-wrap"><div class="mesa-icon-circle">{% if m.estado_class == 'ocupada' %}🍴{% elif m.estado_class == 'cerrada' %}🔒{% else %}🪑{% endif %}</div></div>
+                <div class="mesa-bottom">{% if m.estado_class == 'ocupada' %}👤 {{m.comandas[0].mesero if m.comandas else 'Mesero'}} - ${{m.total}}{% else %}👤 Libre{% endif %}</div>
             </div>
             {% endfor %}
         </div>
     </div>
-    <div class="venta-rapida-bar" onclick="window.location='/dashboard'">
-        VENTA RÁPIDA
-    </div>
+    <div class="venta-rapida-bar" onclick="window.location='/dashboard'">VENTA RÁPIDA</div>
 </div>
 """, mesas=mesas, hora=datetime.now().strftime("%H:%M"))
 
-@app.route('/mesa/<int:id>', methods=['GET','POST'])
+# NUEVO: MESA DETALLE CON TICKET EDITABLE PARA MESERO
+@app.route('/mesa/<int:id>')
 def mesa_detalle(id):
     if 'user' not in session: return redirect('/')
     chk=check_mod('mod_mesas')
     if chk: return chk
-    mesa = Mesa.query.get(id); productos = Producto.query.all()
-    if request.method=='POST':
-        prod = Producto.query.get(int(request.form['producto_id'])); cant = int(request.form['cantidad'])
-        com = Comanda(mesa_id=mesa.id, producto_nombre=prod.nombre, cantidad=cant, mesero=session.get('user'), estado="cocina")
-        mesa.estado="ocupada"; mesa.total = (mesa.total or 0) + (prod.precio*cant)
-        prod.stock = prod.stock - cant
-        db.session.add(com); db.session.commit()
-        return redirect(f'/mesa/{id}')
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4"><div class="row"><div class="col-md-7"><div class="card"><h4>{{mesa.nombre}} - {{mesa.estado|upper}} - Total: ${{mesa.total}}</h4><table class="table table-dark mt-3"><tr><th>Producto</th><th>Cant</th><th>Estado</th><th>Mesero</th></tr>{% for c in mesa.comandas %}{% if c.estado!='entregado' %}<tr><td>{{c.producto_nombre}}</td><td>{{c.cantidad}}</td><td>{{c.estado}}</td><td>{{c.mesero}}</td></tr>{% endif %}{% endfor %}</table><div class="d-flex gap-2"><a href="/mesa/{{mesa.id}}/cobrar" class="btn-rosa">💰 COBRAR Y LIBERAR MESA</a><a href="/mesas" class="btn btn-dark">Volver a Mesas</a></div></div></div><div class="col-md-5"><div class="card"><h5 style="color:#00e5ff">Agregar Platillo a {{mesa.nombre}}</h5><form method="POST" class="mt-3"><select name="producto_id" class="form-control mb-3" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} (Stock {{p.stock}})</option>{% endfor %}</select><input name="cantidad" type="number" value="1" min="1" class="form-control mb-3" required><button class="btn-rosa w-100">🍽️ MANDAR A COCINA</button></form></div></div></div></div>""", mesa=mesa, productos=productos)
+    mesa = Mesa.query.get(id)
+    productos = Producto.query.all()
+    for p in productos: p.categoria = get_categoria(p.nombre)
+    carrito = get_mesa_carrito(id)
+    total_nuevo = sum([x['precio']*x['cant'] for x in carrito])
+    comandas_activas = [c for c in mesa.comandas if c.estado!= 'entregado']
+    total_mesa = mesa.total or 0
+
+    return render_template_string(STYLE_BASE+nav()+"""
+<style>
+.mesa-detalle-wrap{display:flex;gap:10px;padding:10px;height:calc(100vh - 70px)}
+.mesa-left{width:40%;background:#0f0f0f;border:2px solid #00e5ff;border-radius:15px;display:flex;flex-direction:column}
+.mesa-center{width:20%;display:flex;flex-direction:column;gap:8px}
+.mesa-right{width:40%;background:#0f0f0f;border:2px solid #333;border-radius:15px;padding:10px;overflow-y:auto}
+.mesa-ticket-header{background:#111;padding:12px;border-bottom:2px solid #00e5ff;border-radius:15px 15px 0 0}
+.mesa-ticket-body{flex:1;overflow-y:auto;padding:10px;background:white;color:black;min-height:200px}
+.mesa-ticket-footer{background:#111;padding:12px;border-top:2px solid #00e5ff}
+.prod-grid-mesa{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.prod-card-mesa{background:#1a1a1a;border:2px solid #333;border-radius:10px;padding:8px;text-align:center;cursor:pointer}
+.prod-card-mesa:hover{border-color:#00e5ff}
+</style>
+<div class="mesa-detalle-wrap no-print">
+    <div class="mesa-left">
+        <div class="mesa-ticket-header">
+            <h5 style="color:#00e5ff;margin:0">🪑 {{mesa.nombre}} - {{mesa.estado|upper}}</h5>
+            <small style="color:#aaa">Total Mesa: ${{total_mesa}} - Mesero: {{session.get('user')}}</small>
+            <div style="margin-top:8px">
+                <div style="font-weight:bold;color:#00e5ff;font-size:12px">PEDIDOS YA EN COCINA ({{comandas_activas|length}})</div>
+                {% for c in comandas_activas %}
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;border-bottom:1px dashed #333;padding:4px 0">
+                    <span>{{c.cantidad}}x {{c.producto_nombre}}</span><span style="color:{% if c.estado=='cocina' %}#ff4d3a{% else %}#25D366{% endif %}">{{c.estado}}</span>
+                </div>
+                {% endfor %}
+                {% if not comandas_activas %}<small style="color:#666">No hay pedidos en cocina aún</small>{% endif %}
+            </div>
+            <hr style="border-color:#333">
+            <div style="font-weight:bold;color:#ffcc00;font-size:13px">🎫 NUEVO TICKET - Editable por mesero</div>
+        </div>
+        <div class="mesa-ticket-body">
+            <div style="display:flex;justify-content:space-between;font-weight:bold;border-bottom:2px solid black;padding-bottom:5px;font-size:11px"><span style="width:40%">Artículo</span><span style="width:15%">Precio</span><span style="width:25%">Cant</span><span style="width:15%">Total</span><span style="width:5%">X</span></div>
+            {% for item in carrito %}
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #ccc;font-size:12px">
+                <span style="width:40%">{{item.nombre}}</span>
+                <span style="width:15%">${{item.precio}}</span>
+                <span style="width:25%">
+                    <a href="/mesa/{{mesa.id}}/cant/{{loop.index0}}/-1" class="qty-btn minus" style="text-decoration:none">-</a>
+                    <b style="margin:0 5px">{{item.cant}}</b>
+                    <a href="/mesa/{{mesa.id}}/cant/{{loop.index0}}/1" class="qty-btn" style="text-decoration:none">+</a>
+                </span>
+                <span style="width:15%">${{item.precio*item.cant}}</span>
+                <span style="width:5%"><a href="/mesa/{{mesa.id}}/remove/{{loop.index0}}" style="color:red;font-weight:bold">X</a></span>
+            </div>
+            {% endfor %}
+            {% if not carrito %}<p style="color:#888;text-align:center;margin-top:30px">Toca productos a la derecha.<br>El mesero puede agregar, quitar y modificar cantidad aquí antes de enviar a cocina.</p>{% endif %}
+        </div>
+        <div class="mesa-ticket-footer">
+            <div style="display:flex;justify-content:space-between;color:white;font-weight:bold;font-size:16px"><span>Total Nuevo</span><span>${{total_nuevo}}</span></div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <a href="/mesa/{{mesa.id}}/enviar" class="btn-rosa w-100" style="background:#00e5ff;color:black;text-align:center;text-decoration:none;padding:12px;border-radius:8px;font-weight:bold">🍽️ MANDAR A COCINA ({{carrito|length}} items)</a>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+                <a href="/mesa/{{mesa.id}}/clear" style="background:#555;color:white;text-align:center;text-decoration:none;padding:8px;border-radius:8px;width:50%">Limpiar Ticket</a>
+                <a href="/mesas" style="background:#222;color:white;text-align:center;text-decoration:none;padding:8px;border-radius:8px;width:50%">Volver Mesas</a>
+            </div>
+            <a href="/mesa/{{mesa.id}}/cobrar" class="btn-rosa w-100 mt-2" style="background:#25D366;text-align:center;text-decoration:none;display:block">💰 COBRAR Y LIBERAR MESA ${{total_mesa + total_nuevo}}</a>
+        </div>
+    </div>
+    <div class="mesa-center">
+        <button class="cat-btn active" onclick="filtrarMesa('todos')" id="mbtn-todos">Todos</button>
+        <button class="cat-btn" onclick="filtrarMesa('lechon')" id="mbtn-lechon">Lechón</button>
+        <button class="cat-btn" onclick="filtrarMesa('tortas')" id="mbtn-tortas">Tortas</button>
+        <button class="cat-btn" onclick="filtrarMesa('ordenes')" id="mbtn-ordenes">Órdenes</button>
+        <button class="cat-btn" onclick="filtrarMesa('bebidas')" id="mbtn-bebidas">Bebidas</button>
+        <button class="cat-btn" onclick="filtrarMesa('extras')" id="mbtn-extras">Extras</button>
+        <div style="margin-top:auto;background:#111;border:1px solid #00e5ff;border-radius:10px;padding:10px">
+            <small style="color:#00e5ff">Mesa {{mesa.nombre}}</small><br>
+            <small style="color:#aaa">Estado: {{mesa.estado}}</small><br>
+            <small style="color:#aaa">Total: ${{total_mesa}}</small><br>
+            <small style="color:#aaa">Nuevo: ${{total_nuevo}}</small>
+        </div>
+    </div>
+    <div class="mesa-right">
+        <small style="color:#aaa">Toca para agregar al ticket de la mesa - Mesero puede editar antes de enviar</small>
+        <div class="prod-grid-mesa" style="margin-top:10px">
+            {% for p in productos %}
+            <div class="prod-card-mesa" data-cat="{{p.categoria}}" onclick="window.location='/mesa/{{mesa.id}}/add/{{p.id}}'">
+                <img src="/static/logo.png?v=ruve3" style="width:50px;height:50px;background:white;border-radius:8px;padding:3px">
+                <h6 style="color:#00e5ff;margin:6px 0 2px 0;font-size:12px">{{p.nombre}}</h6>
+                <small style="color:#aaa">${{p.precio}} | Stock {{p.stock}}</small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+<script>
+function filtrarMesa(cat){
+    document.querySelectorAll('.mesa-center.cat-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('mbtn-'+cat).classList.add('active');
+    document.querySelectorAll('.prod-card-mesa').forEach(card=>{
+        if(cat==='todos' || card.dataset.cat===cat){card.style.display='block';} else {card.style.display='none';}
+    });
+}
+</script>
+""", mesa=mesa, productos=productos, carrito=carrito, total_nuevo=total_nuevo, total_mesa=total_mesa, comandas_activas=comandas_activas)
+
+# RUTAS PARA MESERO EDITAR TICKET
+@app.route('/mesa/<int:mesa_id>/add/<int:prod_id>')
+def mesa_add(mesa_id, prod_id):
+    if 'user' not in session: return redirect('/')
+    prod=Producto.query.get(prod_id)
+    if not prod or prod.stock<=0: return redirect(f'/mesa/{mesa_id}')
+    carrito=get_mesa_carrito(mesa_id)
+    found=False
+    for item in carrito:
+        if item['id']==prod.id:
+            item['cant']+=1; found=True; break
+    if not found:
+        carrito.append({'id':prod.id,'nombre':prod.nombre,'precio':prod.precio,'costo':prod.costo or 0,'cant':1})
+    set_mesa_carrito(mesa_id, carrito)
+    return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/cant/<int:index>/<int:delta>')
+def mesa_cant(mesa_id, index, delta):
+    carrito=get_mesa_carrito(mesa_id)
+    if 0 <= index < len(carrito):
+        carrito[index]['cant']+=delta
+        if carrito[index]['cant']<=0:
+            carrito.pop(index)
+        set_mesa_carrito(mesa_id, carrito)
+    return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/remove/<int:index>')
+def mesa_remove(mesa_id, index):
+    carrito=get_mesa_carrito(mesa_id)
+    if 0 <= index < len(carrito):
+        carrito.pop(index)
+        set_mesa_carrito(mesa_id, carrito)
+    return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/clear')
+def mesa_clear(mesa_id):
+    set_mesa_carrito(mesa_id, [])
+    return redirect(f'/mesa/{mesa_id}')
+
+@app.route('/mesa/<int:mesa_id>/enviar')
+def mesa_enviar(mesa_id):
+    if 'user' not in session: return redirect('/')
+    mesa=Mesa.query.get(mesa_id)
+    carrito=get_mesa_carrito(mesa_id)
+    if not carrito:
+        return redirect(f'/mesa/{mesa_id}')
+    for item in carrito:
+        prod=Producto.query.get(item['id'])
+        if not prod or prod.stock < item['cant']:
+            continue
+        com=Comanda(mesa_id=mesa.id, producto_nombre=prod.nombre, cantidad=item['cant'], mesero=session.get('user'), estado="cocina")
+        mesa.estado="ocupada"
+        mesa.total = (mesa.total or 0) + (prod.precio*item['cant'])
+        prod.stock = prod.stock - item['cant']
+        db.session.add(com)
+    db.session.commit()
+    set_mesa_carrito(mesa_id, [])
+    return redirect(f'/mesa/{mesa_id}')
 
 @app.route('/mesa/<int:id>/cobrar')
 def mesa_cobrar(id):
     if 'user' not in session: return redirect('/')
     mesa = Mesa.query.get(id)
+    # cobrar también lo que esté en carrito pendiente
+    carrito=get_mesa_carrito(id)
+    for item in carrito:
+        prod=Producto.query.get(item['id'])
+        if prod:
+            com=Comanda(mesa_id=mesa.id, producto_nombre=prod.nombre, cantidad=item['cant'], mesero=session.get('user'), estado="cocina")
+            mesa.total = (mesa.total or 0) + (prod.precio*item['cant'])
+            prod.stock = prod.stock - item['cant']
+            db.session.add(com)
+    db.session.commit()
+    set_mesa_carrito(id, [])
+    # ahora cobra todo lo de la mesa
     for c in mesa.comandas:
         if c.estado!= 'entregado':
             prod = Producto.query.filter_by(nombre=c.producto_nombre).first()
@@ -544,7 +671,6 @@ def cocina_view():
 
 @app.route('/cocina/listo/<int:id>')
 def cocina_listo(id):
-    if 'user' not in session: return redirect('/')
     c = Comanda.query.get(id); c.estado='listo'; db.session.commit()
     return redirect('/cocina')
 
@@ -660,7 +786,7 @@ def ventas_route():
     if session.get('is_admin'): ventas=Venta.query.order_by(Venta.id.desc()).all()
     else: ventas=Venta.query.filter_by(vendedor=session.get('user')).order_by(Venta.id.desc()).all()
     for v in ventas: v.msj=make_whats_msg(v)
-    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4"><div class="card"><h5>{% if is_admin %}Historial Completo - Admin puede borrar 🗑️{% else %}Mi Historial{% endif %} - Total: ${{total}}</h5><table class="table table-dark table-bordered mt-3"><tr><th>Cliente</th><th>Producto</th><th>Total</th>{% if is_admin %}<th>Vendedor</th>{% endif %}<th>Acciones</th></tr>{% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td>{% if is_admin %}<td>{{v.vendedor}}</td>{% endif %}<td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px">TICKET</a>{% endif %}{% if cfg.whatsapp_btn %}<a href="https://wa.me/?text={{v.msj}}" target="_blank" class="btn-whats ms-1">WA</a>{% endif %}{% if is_admin %}<a href="/eliminar_venta/{{v.id}}" class="btn ms-1" style="background:#ff3b3b;color:white;font-size:11px" onclick="return confirm('¿Borrar ticket #{{v.id}}?')">🗑️</a>{% endif %}</td></tr>{% endfor %}</table></div></div>""", ventas=ventas, total=sum([v.total for v in ventas]), cfg=cfg, is_admin=session.get('is_admin'))
+    return render_template_string(STYLE_BASE+nav()+"""<div class="container mt-4"><div class="card"><h5>{% if is_admin %}Historial Completo - Admin puede borrar 🗑️{% else %}Mi Historial{% endif %} - Total: ${{total}}</h5><table class="table table-dark table-bordered mt-3"><tr><th>Cliente</th><th>Producto</th><th>Total</th>{% if is_admin %}<th>Vendedor</th>{% endif %}<th>Acciones</th></tr>{% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td>{% if is_admin %}<td>{{v.vendedor}}</td>{% endif %}<td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px">TICKET</a>{% endif %}{% if is_admin %}<a href="/eliminar_venta/{{v.id}}" class="btn ms-1" style="background:#ff3b3b;color:white;font-size:11px" onclick="return confirm('¿Borrar ticket #{{v.id}}?')">🗑️</a>{% endif %}</td></tr>{% endfor %}</table></div></div>""", ventas=ventas, total=sum([v.total for v in ventas]), cfg=cfg, is_admin=session.get('is_admin'))
 
 @app.route('/reporte')
 def reporte():
