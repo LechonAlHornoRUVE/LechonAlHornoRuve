@@ -2,6 +2,7 @@ from flask import Flask, request, redirect, session, render_template_string, sen
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from collections import defaultdict
 import os, urllib.parse, io
 
 app = Flask(__name__)
@@ -43,13 +44,10 @@ def get_config():
 
 with app.app_context():
     db.create_all()
-    # Crear admin si no existe
     if not User.query.filter_by(username='admin').first():
-        db.session.add(User(username='admin', password=generate_password_hash('admin123'), is_admin=True))
-        db.session.commit()
+        db.session.add(User(username='admin', password=generate_password_hash('admin123'), is_admin=True)); db.session.commit()
     else:
-        u=User.query.filter_by(username='admin').first()
-        u.is_admin=True; db.session.commit()
+        u=User.query.filter_by(username='admin').first(); u.is_admin=True; db.session.commit()
     get_config()
     if Producto.query.count()==0:
         db.session.add_all([Producto(nombre='Lechón por Kilo', precio=350, stock=50), Producto(nombre='Lechón Entero', precio=3500, stock=5), Producto(nombre='Torta de Lechón', precio=70, stock=30)]); db.session.commit()
@@ -70,7 +68,7 @@ def nav():
     prod_link = '<a href="/productos" class="me-3">Productos</a>' if is_admin else ''
     return f'<nav class="navbar p-3"><div class="d-flex align-items-center"><img src="/static/logo.png?v=ruve3" style="width:45px;height:45px;border-radius:50%;margin-right:10px;background:white;padding:3px"><h4 style="color:#ff4d8a" class="m-0">Ruve</h4> <small style="color:#aaa;margin-left:10px">{session.get("user")} {"(Admin)" if is_admin else "(Empleado)"}</small></div><div><a href="/dashboard" class="me-3">Dashboard</a>{prod_link}<a href="/ventas" class="me-3">Ventas</a><a href="/reporte" class="me-3">Reporte</a>{admin_links}<a href="/logout">Salir</a></div></nav>'
 
-def make_whats_msg(v): return urllib.parse.quote(f"Hola {v.cliente}! 🐖 Tu pedido Ruve: {v.cantidad}x {v.producto_nombre} - ${v.total}. Ticket #{v.id} - EL SABOR HACE LA DIFERENCIA 🔥")
+def make_whats_msg(v): return urllib.parse.quote(f"Hola {v.cliente}! 🐖 Tu pedido Ruve: {v.cantidad}x {v.producto_nombre} - ${v.total}. Ticket #{v.id} - Vendedor: {v.vendedor}")
 def admin_required():
     if 'user' not in session: return redirect('/')
     if not session.get('is_admin'): return redirect('/dashboard')
@@ -82,7 +80,7 @@ def login():
         u=User.query.filter_by(username=request.form['username']).first()
         if u and check_password_hash(u.password, request.form['password']):
             session['user']=u.username; session['is_admin']=u.is_admin; return redirect('/dashboard')
-    return render_template_string(STYLE+f'<div class="container" style="max-width:420px;margin-top:25px"><div class="card text-center"><img src="/static/logo.png?v=ruve3" style="width:210px;height:210px;object-fit:contain;background:white;border-radius:50%;padding:8px;border:3px solid #ff4d8a;margin:0 auto"><h2 style="color:#ff4d8a" class="mt-3">LechonAlHornoRuve</h2><form method="POST" class="mt-4 text-start"><input name="username" class="form-control mb-3" placeholder="Usuario" required><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required><button class="btn-rosa w-100">ENTRAR</button></form><small style="color:#555">admin / admin123</small></div></div>')
+    return render_template_string(STYLE+f'<div class="container" style="max-width:420px;margin-top:25px"><div class="card text-center"><img src="/static/logo.png?v=ruve3" style="width:210px;height:210px;object-fit:contain;background:white;border-radius:50%;padding:8px;border:3px solid #ff4d8a;margin:0 auto"><h2 style="color:#ff4d8a" class="mt-3">LechonAlHornoRuve</h2><form method="POST" class="mt-4 text-start"><input name="username" class="form-control mb-3" placeholder="Usuario" required><input name="password" type="password" class="form-control mb-3" placeholder="Contraseña" required><button class="btn-rosa w-100">ENTRAR</button></form></div></div>')
 
 @app.route('/dashboard')
 def dashboard():
@@ -90,10 +88,10 @@ def dashboard():
     cfg=get_config(); productos=Producto.query.all(); ventas=Venta.query.order_by(Venta.id.desc()).limit(12).all()
     hoy=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0); total_hoy=sum([v.total for v in Venta.query.filter(Venta.fecha>=hoy).all()])
     html=STYLE+nav()+"""<div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card text-center"><h6>Ventas Hoy</h6><h2 style="color:#ff4d8a">${{total_hoy}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>Productos</h6><h2 style="color:#ff4d8a">{{num_prod}}</h2></div></div><div class="col-md-4"><div class="card text-center"><h6>Tickets</h6><h2 style="color:#ff4d8a">{{num_ventas}}</h2></div></div></div>
-    <div class="card mt-4"><h5 style="color:#ff4d8a">Vender Rápido - Chetumal (Vendedor: {{session.get('user')}})</h5>
-    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente"></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} (Stock: {{p.stock}})</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
+    <div class="card mt-4"><h5 style="color:#ff4d8a">Vender Rápido - Chetumal ({{session.get('user')}})</h5>
+    <form action="/vender" method="POST" class="row g-2 mt-3"><div class="col-md-3"><input name="cliente" class="form-control" placeholder="👤 Cliente"></div><div class="col-md-4"><select name="producto_id" class="form-control" required>{% for p in productos %}<option value="{{p.id}}">{{p.nombre}} - ${{p.precio}} ({{p.stock}})</option>{% endfor %}</select></div><div class="col-md-2"><input name="cantidad" type="number" value="1" min="1" class="form-control"></div><div class="col-md-3"><button class="btn-rosa w-100">💰 VENDER</button></div></form></div>
     <div class="card mt-4"><h5>Últimas Ventas</h5><table class="table table-dark table-bordered mt-3"><tr><th>Cliente</th><th>Producto</th><th>Total</th><th>Vendedor</th><th>Acciones</th></tr>
-    {% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td><td>{{v.vendedor}}</td><td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px;padding:4px 8px">🎫 TICKET</a>{% endif %}{% if cfg.whatsapp_btn %}<a href="https://wa.me/?text={{v.msj}}" target="_blank" class="btn-whats ms-1">📲 WA</a>{% endif %}</td></tr>{% endfor %}</table></div></div>"""
+    {% for v in ventas %}<tr><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>${{v.total}}</td><td>{{v.vendedor}}</td><td>{% if cfg.tickets %}<a href="/ticket/{{v.id}}" class="btn-rosa" style="font-size:11px">TICKET</a>{% endif %}{% if cfg.whatsapp_btn %}<a href="https://wa.me/?text={{v.msj}}" target="_blank" class="btn-whats ms-1">WA</a>{% endif %}</td></tr>{% endfor %}</table></div></div>"""
     for v in ventas: v.msj=make_whats_msg(v)
     return render_template_string(html, productos=productos, ventas=ventas, total_hoy=total_hoy, num_prod=Producto.query.count(), num_ventas=Venta.query.count(), cfg=cfg)
 
@@ -113,7 +111,7 @@ def ticket(id):
     cfg=get_config()
     if not cfg.tickets: return redirect('/dashboard')
     v=Venta.query.get(id); msj=make_whats_msg(v)
-    return render_template_string(STYLE+f'<div class="container" style="max-width:380px;margin-top:20px"><div class="card" style="background:white;color:black;border:2px dashed black"><div class="text-center"><img src="/static/logo.png?v=ruve3" style="width:110px"><h5 style="font-weight:bold">LECHÓN AL HORNO RUVE</h5><small>EL SABOR HACE LA DIFERENCIA</small></div><hr style="border-top:1px dashed black"><p><b>Ticket #{v.id}</b><br>Cliente: {v.cliente}<br>Vendedor: {v.vendedor}<br>Fecha: {v.fecha.strftime("%d/%m/%Y %H:%M")}<br>Producto: {v.producto_nombre}<br>Cant: {v.cantidad}<br><b>Total: ${v.total}</b></p><hr style="border-top:1px dashed black"><p class="text-center" style="font-size:12px">¡Gracias por su compra! 🔥<br>Chetumal, Q. Roo</p><div class="text-center no-print"><button onclick="window.print()" class="btn-rosa">🖨️ IMPRIMIR</button>'+(f'<a href="https://wa.me/?text={msj}" target="_blank" class="btn-whats ms-2 p-2">📲 WhatsApp</a>' if cfg.whatsapp_btn else '')+f'<a href="/dashboard" class="btn btn-dark ms-2">Volver</a></div></div></div>')
+    return render_template_string(STYLE+f'<div class="container" style="max-width:380px;margin-top:20px"><div class="card" style="background:white;color:black;border:2px dashed black"><div class="text-center"><img src="/static/logo.png?v=ruve3" style="width:110px"><h5 style="font-weight:bold">LECHÓN AL HORNO RUVE</h5><small>EL SABOR HACE LA DIFERENCIA - Vend: {v.vendedor}</small></div><hr style="border-top:1px dashed black"><p><b>Ticket #{v.id}</b><br>Cliente: {v.cliente}<br>Vendedor: {v.vendedor}<br>Fecha: {v.fecha.strftime("%d/%m/%Y %H:%M")}<br>Producto: {v.producto_nombre}<br>Cant: {v.cantidad}<br><b>Total: ${v.total}</b></p><div class="text-center no-print"><button onclick="window.print()" class="btn-rosa">🖨️ IMPRIMIR</button>'+(f'<a href="https://wa.me/?text={msj}" target="_blank" class="btn-whats ms-2 p-2">📲 WA</a>' if cfg.whatsapp_btn else '')+f'<a href="/dashboard" class="btn btn-dark ms-2">Volver</a></div></div></div>')
 
 @app.route('/productos', methods=['GET','POST'])
 def productos_route():
@@ -121,7 +119,7 @@ def productos_route():
     if not session.get('is_admin'): return redirect('/dashboard')
     if request.method=='POST':
         db.session.add(Producto(nombre=request.form['nombre'], precio=float(request.form['precio']), stock=int(request.form['stock']))); db.session.commit(); return redirect('/productos')
-    return render_template_string(STYLE+nav()+'<div class="container mt-4"><div class="card"><h5>Agregar Producto (Solo Admin)</h5><form method="POST" class="row g-2 mt-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form><table class="table table-dark table-bordered mt-4"><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td>{{p.nombre}}</td><td>${{p.precio}}</td><td>{{p.stock}}</td><td><a href="/eliminar_producto/{{p.id}}" style="color:red">Eliminar</a></td></tr>{% endfor %}</table></div></div>', productos=Producto.query.all())
+    return render_template_string(STYLE+nav()+'<div class="container mt-4"><div class="card"><h5>Productos (Solo Admin)</h5><form method="POST" class="row g-2 mt-2"><div class="col-md-4"><input name="nombre" class="form-control" placeholder="Nombre" required></div><div class="col-md-3"><input name="precio" type="number" step="0.01" class="form-control" placeholder="Precio" required></div><div class="col-md-2"><input name="stock" type="number" class="form-control" placeholder="Stock" required></div><div class="col-md-3"><button class="btn-rosa w-100">Agregar</button></div></form><table class="table table-dark table-bordered mt-4"><tr><th>Nombre</th><th>Precio</th><th>Stock</th><th></th></tr>{% for p in productos %}<tr><td>{{p.nombre}}</td><td>${{p.precio}}</td><td>{{p.stock}}</td><td><a href="/eliminar_producto/{{p.id}}" style="color:red">Eliminar</a></td></tr>{% endfor %}</table></div></div>', productos=Producto.query.all())
 
 @app.route('/eliminar_producto/<int:id>')
 def eliminar_producto(id):
@@ -141,9 +139,45 @@ def ventas_route():
 def reporte():
     if 'user' not in session: return redirect('/')
     cfg=get_config(); hoy=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
-    ventas_hoy=Venta.query.filter(Venta.fecha>=hoy).order_by(Venta.fecha.desc()).all(); total_hoy=sum([v.total for v in ventas_hoy])
-    msg=f"📊 REPORTE RUVE {datetime.now().strftime('%d/%m/%Y')} - Total: ${total_hoy} - {len(ventas_hoy)} ventas"; msg_enc=urllib.parse.quote(msg)
-    return render_template_string(STYLE+nav()+'<div class="container mt-4"><div class="card"><h4>Total Hoy: <span style="color:#25D366">${{total_hoy}}</span> ({{ventas_hoy|length}} ventas)</h4><div class="no-print mt-3"><button onclick="window.print()" class="btn-rosa me-2">🖨️ IMPRIMIR</button>{% if cfg.reporte_pdf %}<a href="/reporte_pdf" class="btn btn-light me-2">📄 PDF</a>{% endif %}{% if cfg.total_whatsapp %}<a href="https://wa.me/{{cfg.numero_whatsapp}}?text={{msg_enc}}" target="_blank" class="btn-whats p-2">📲 Total a mi WhatsApp</a>{% endif %}</div><table class="table table-dark table-bordered mt-4"><tr><th>Hora</th><th>Cliente</th><th>Producto</th><th>Vendedor</th><th>Total</th></tr>{% for v in ventas_hoy %}<tr><td>{{v.fecha.strftime("%H:%M")}}</td><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td>{{v.vendedor}}</td><td>${{v.total}}</td></tr>{% endfor %}</table></div></div>', ventas_hoy=ventas_hoy, total_hoy=total_hoy, cfg=cfg, msg_enc=msg_enc)
+    ventas_hoy=Venta.query.filter(Venta.fecha>=hoy).order_by(Venta.fecha.desc()).all()
+    total_hoy=sum([v.total for v in ventas_hoy])
+    
+    # CIERRE POR VENDEDOR
+    por_vendedor=defaultdict(list)
+    for v in ventas_hoy: por_vendedor[v.vendedor].append(v)
+    cierre=[]
+    for vend, vs in por_vendedor.items():
+        cierre.append({'vendedor':vend, 'total':sum([x.total for x in vs]), 'cantidad':len(vs)})
+    cierre=sorted(cierre, key=lambda x: x['total'], reverse=True)
+
+    msg=f"📊 CIERRE RUVE {datetime.now().strftime('%d/%m')} Total: ${total_hoy} - {len(ventas_hoy)} ventas. "
+    for c in cierre: msg+=f" {c['vendedor']}: ${c['total']} ({c['cantidad']}) |"
+    msg_enc=urllib.parse.quote(msg)
+
+    return render_template_string(STYLE+nav()+"""
+    <div class="container mt-4">
+    <div class="card"><h4>Total Hoy: <span style="color:#25D366">${{total_hoy}}</span> ({{ventas_hoy|length}} ventas)</h4>
+    <div class="no-print mt-3">
+    <button onclick="window.print()" class="btn-rosa me-2">🖨️ IMPRIMIR</button>
+    {% if cfg.reporte_pdf %}<a href="/reporte_pdf" class="btn btn-light me-2">📄 PDF</a>{% endif %}
+    {% if cfg.total_whatsapp %}<a href="https://wa.me/{{cfg.numero_whatsapp}}?text={{msg_enc}}" target="_blank" class="btn-whats p-2">📲 Mandar CIERRE a mi WhatsApp</a>{% endif %}
+    </div>
+    </div>
+
+    <div class="card mt-4" style="border-color:#ffcc00"><h5 style="color:#ffcc00">💰 CIERRE DE CAJA POR VENDEDOR - HOY</h5>
+    <div class="row mt-3">
+    {% for c in cierre %}<div class="col-md-4 mb-3"><div class="card" style="border-color:#ffcc00;background:#1a1a0a"><h6 style="color:#ffcc00">{{c.vendedor}}</h6><h3 style="color:white">${{c.total}}</h3><small style="color:#aaa">{{c.cantidad}} ventas hoy</small><br><a href="/reporte?vendedor={{c.vendedor}}" class="btn-rosa mt-2" style="font-size:11px;padding:5px 10px">Ver detalle</a></div></div>{% endfor %}
+    </div>
+    {% if not cierre %}<p style="color:#666">Aún no hay ventas hoy</p>{% endif %}
+    </div>
+
+    <div class="card mt-4"><h5>Detalle {% if filtro_vend %} de {{filtro_vend}} {% else %} Completo {% endif %}</h5>
+    <table class="table table-dark table-bordered mt-3"><tr><th>Hora</th><th>Cliente</th><th>Producto</th><th>Vendedor</th><th>Total</th></tr>
+    {% for v in ventas_filtradas %}<tr><td>{{v.fecha.strftime('%H:%M')}}</td><td>{{v.cliente}}</td><td>{{v.cantidad}}x {{v.producto_nombre}}</td><td><b style="color:#ffcc00">{{v.vendedor}}</b></td><td>${{v.total}}</td></tr>{% endfor %}</table>
+    {% if filtro_vend %}<a href="/reporte" class="btn btn-dark">Ver todo</a>{% endif %}
+    </div>
+    </div>
+    """, ventas_hoy=ventas_hoy, ventas_filtradas=[v for v in ventas_hoy if (request.args.get('vendedor') is None or v.vendedor==request.args.get('vendedor'))], total_hoy=total_hoy, cfg=cfg, msg_enc=msg_enc, cierre=cierre, filtro_vend=request.args.get('vendedor'))
 
 @app.route('/reporte_pdf')
 def reporte_pdf():
@@ -151,16 +185,24 @@ def reporte_pdf():
     cfg=get_config()
     if not cfg.reporte_pdf: return redirect('/reporte')
     hoy=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0); ventas=Venta.query.filter(Venta.fecha>=hoy).all(); total=sum([v.total for v in ventas])
+    por_vendedor=defaultdict(list)
+    for v in ventas: por_vendedor[v.vendedor].append(v)
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import letter
     buffer=io.BytesIO(); c=canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica-Bold", 16); c.drawString(50,750,"LECHON AL HORNO RUVE - REPORTE"); c.setFont("Helvetica", 12); c.drawString(50,730,f"Fecha: {datetime.now().strftime('%d/%m/%Y')} - Total: ${total} - Ventas: {len(ventas)}")
-    y=700
+    c.setFont("Helvetica-Bold", 16); c.drawString(50,750,"LECHON AL HORNO RUVE - CIERRE DE CAJA")
+    c.setFont("Helvetica", 12); c.drawString(50,730,f"Fecha: {datetime.now().strftime('%d/%m/%Y')} - Total: ${total} - Ventas: {len(ventas)}")
+    y=710
+    c.setFont("Helvetica-Bold", 12); c.drawString(50,y,"--- POR VENDEDOR ---"); y-=20
+    c.setFont("Helvetica", 11)
+    for vend, vs in por_vendedor.items():
+        tot=sum([x.total for x in vs]); c.drawString(50,y,f"{vend}: ${tot} - {len(vs)} ventas"); y-=18
+    y-=10; c.setFont("Helvetica-Bold", 12); c.drawString(50,y,"--- DETALLE ---"); y-=20; c.setFont("Helvetica", 10)
     for v in ventas:
-        c.drawString(50,y,f"{v.fecha.strftime('%H:%M')} - {v.cliente} - {v.cantidad}x {v.producto_nombre} - ${v.total} - Vend: {v.vendedor}"); y-=20
+        c.drawString(50,y,f"{v.fecha.strftime('%H:%M')} - {v.cliente} - {v.cantidad}x {v.producto_nombre} - ${v.total} - {v.vendedor}"); y-=14
         if y<50: c.showPage(); y=750
     c.save(); buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name=f"reporte_ruve_{datetime.now().strftime('%d%m%Y')}.pdf", mimetype='application/pdf')
+    return send_file(buffer, as_attachment=True, download_name=f"cierre_ruve_{datetime.now().strftime('%d%m%Y')}.pdf", mimetype='application/pdf')
 
 @app.route('/admin/config', methods=['GET','POST'])
 def admin_config():
@@ -187,14 +229,12 @@ def admin_usuarios():
             return render_template_string(STYLE+nav()+'<div class="container mt-4"><div class="card"><h5 style="color:red">Ese usuario ya existe</h5><a href="/admin/usuarios" class="btn-rosa">Volver</a></div></div>')
         es_admin = 'is_admin' in request.form
         db.session.add(User(username=request.form['username'].strip(), password=generate_password_hash(request.form['password']), is_admin=es_admin)); db.session.commit(); return redirect('/admin/usuarios')
-    return render_template_string(STYLE+nav()+"""
-    <div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card"><h5 style="color:#ffcc00">👥 Crear Usuario</h5>
-    <form method="POST" class="mt-3"><input name="username" class="form-control mb-3" placeholder="Usuario (ej: maria)" required><input name="password" class="form-control mb-3" type="text" placeholder="Contraseña (ej: 1234)" required>
-    <label style="display:flex;align-items:center;cursor:pointer;margin-bottom:15px"><input type="checkbox" name="is_admin" style="width:20px;height:20px;accent-color:#ff4d8a"> <span style="margin-left:10px">Es administrador (puede ver Config y Usuarios)</span></label>
-    <button class="btn-rosa w-100">Crear Usuario</button></form><small style="color:#666" class="mt-3 d-block">Empleado: solo puede vender y ver reporte. Admin: todo.</small></div></div>
+    return render_template_string(STYLE+nav()+"""<div class="container mt-4"><div class="row"><div class="col-md-4"><div class="card"><h5 style="color:#ffcc00">👥 Crear Usuario</h5>
+    <form method="POST" class="mt-3"><input name="username" class="form-control mb-3" placeholder="Usuario (ej: maria)" required><input name="password" class="form-control mb-3" type="text" placeholder="Contraseña" required>
+    <label style="display:flex;align-items:center;cursor:pointer;margin-bottom:15px"><input type="checkbox" name="is_admin" style="width:20px;height:20px;accent-color:#ff4d8a"> <span style="margin-left:10px">Es administrador</span></label>
+    <button class="btn-rosa w-100">Crear Usuario</button></form></div></div>
     <div class="col-md-8"><div class="card"><h5>Usuarios Actuales</h5><table class="table table-dark table-bordered mt-3"><tr><th>Usuario</th><th>Rol</th><th>Acción</th></tr>
-    {% for u in usuarios %}<tr><td>{{u.username}}</td><td>{% if u.is_admin %}<span style="color:#25D366">ADMIN</span>{% else %}Empleado{% endif %}</td><td>{% if u.username!='admin' %}<a href="/admin/usuarios/eliminar/{{u.id}}" style="color:red" onclick="return confirm('¿Eliminar?')">Eliminar</a>{% else %}<small style="color:#555">No se puede eliminar</small>{% endif %}</td></tr>{% endfor %}</table></div></div></div></div>
-    """, usuarios=User.query.all())
+    {% for u in usuarios %}<tr><td>{{u.username}}</td><td>{% if u.is_admin %}<span style="color:#25D366">ADMIN</span>{% else %}Empleado{% endif %}</td><td>{% if u.username!='admin' %}<a href="/admin/usuarios/eliminar/{{u.id}}" style="color:red" onclick="return confirm('¿Eliminar?')">Eliminar</a>{% else %}<small style="color:#555">No se puede</small>{% endif %}</td></tr>{% endfor %}</table></div></div></div></div>""", usuarios=User.query.all())
 
 @app.route('/admin/usuarios/eliminar/<int:id>')
 def eliminar_usuario(id):
